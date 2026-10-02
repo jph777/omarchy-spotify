@@ -1,16 +1,25 @@
 #!/bin/sh
-# Usage: scripts/land feat/add-to-playlist
-# Tests the branch, merges it into dev (--no-ff), pushes dev, removes branch + worktree.
+# Usage: scripts/land feat/add-to-playlist "One-line summary"   (feat/*: squash-merge, summary required)
+#        scripts/land fix/some-bug                              (anything else: --no-ff merge)
+# Tests the branch, merges it into dev, pushes dev, removes branch + worktree.
+# Features are squashed so each one is a single commit on dev. Land a feat/* branch only when finalized.
 . "$(dirname "$0")/_lib.sh"
-[ $# -eq 1 ] || die "usage: scripts/land <branch>"
-b=$1
+[ $# -ge 1 ] && [ $# -le 2 ] || die "usage: scripts/land <branch> [summary]"
+b=$1; msg=${2:-}
 case "$b" in dev|stable|upstream) die "cannot land '$b'" ;; esac
+case "$b" in feat/*) squash=1; [ -n "$msg" ] || die "feat/* is squash-merged: scripts/land $b \"one-line summary\"" ;; *) squash=0 ;; esac
 dir=$(git -C "$LIVE" worktree list --porcelain | awk -v b="refs/heads/$b" '$1=="worktree"{p=$2} $1=="branch"&&$2==b{print p}')
 [ -z "$dir" ] || { [ -z "$(git -C "$dir" status --porcelain)" ] || die "uncommitted changes in $dir"; sh "$dir/tests/run"; }
 [ -z "$(git -C "$DEV_WT" status --porcelain)" ] || die "dev worktree is dirty"
-git -C "$DEV_WT" merge --no-ff -m "Merge $b into dev" "$b"
+if [ "$squash" = 1 ]; then
+  git -C "$DEV_WT" merge --squash "$b"
+  git -C "$DEV_WT" commit -q -m "$msg" -m "$(git -C "$DEV_WT" log --reverse --format='- %s' "dev..$b")"
+else
+  git -C "$DEV_WT" merge --no-ff -m "Merge $b into dev" "$b"
+fi
 sh "$DEV_WT/tests/run"
 git -C "$DEV_WT" push origin dev
 [ -z "$dir" ] || git -C "$LIVE" worktree remove "$dir"
-git -C "$DEV_WT" branch -d "$b"   # from dev, so "merged" is judged against dev, not the main checkout
+if [ "$squash" = 1 ]; then flag=-D; else flag=-d; fi   # a squashed branch is never an ancestor of dev
+git -C "$DEV_WT" branch "$flag" "$b"
 echo "landed $b on dev. Test live with: scripts/live dev"
