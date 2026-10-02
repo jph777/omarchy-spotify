@@ -1,5 +1,6 @@
 # Shared helpers, sourced by the other scripts.
 set -eu
+cd "$(dirname "$0")"   # run from the repo regardless of caller cwd
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
 LIVE=$(dirname "$COMMON")                          # the main worktree: the live plugin
 WT_ROOT=${OMARCHY_SPOTIFY_WORKTREES:-$HOME/Work/omarchy-spotify-worktrees}
