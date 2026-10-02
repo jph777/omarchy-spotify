@@ -12,5 +12,5 @@ git -C "$DEV_WT" merge --no-ff -m "Merge $b into dev" "$b"
 sh "$DEV_WT/tests/run"
 git -C "$DEV_WT" push origin dev
 [ -z "$dir" ] || git -C "$LIVE" worktree remove "$dir"
-git -C "$LIVE" branch -d "$b"
+git -C "$DEV_WT" branch -d "$b"   # from dev, so "merged" is judged against dev, not the main checkout
 echo "landed $b on dev. Test live with: scripts/live dev"
