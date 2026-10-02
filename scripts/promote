@@ -15,4 +15,7 @@ read -r answer < /dev/tty
 git switch stable
 git merge --ff-only dev
 ALLOW_STABLE_PUSH=1 git push origin stable
+if reload=$(git config workflow.reloadCmd); then
+  echo "reloading: $reload"; sh -c "$reload" >/dev/null 2>&1 || echo "warning: reload command failed" >&2
+fi
 echo "stable -> $(git rev-parse --short stable); live plugin is on stable."
