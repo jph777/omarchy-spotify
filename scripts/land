@@ -13,7 +13,8 @@ dir=$(git -C "$LIVE" worktree list --porcelain | awk -v b="refs/heads/$b" '$1=="
 [ -z "$(git -C "$DEV_WT" status --porcelain)" ] || die "dev worktree is dirty"
 if [ "$squash" = 1 ]; then
   git -C "$DEV_WT" merge --squash "$b"
-  git -C "$DEV_WT" commit -q -m "$msg" -m "$(git -C "$DEV_WT" log --reverse --format='- %s' "dev..$b")"
+  # The body lists the branch's commits, minus TEMP experiments and their reverts.
+  git -C "$DEV_WT" commit -q -m "$msg" -m "$(git -C "$DEV_WT" log --reverse --format='- %s' --invert-grep --grep='^TEMP' --grep='^Revert "TEMP' "dev..$b")"
 else
   git -C "$DEV_WT" merge --no-ff -m "Merge $b into dev" "$b"
 fi
