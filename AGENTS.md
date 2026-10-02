@@ -49,6 +49,9 @@ scripts/promote                   # USER ONLY, in a real terminal: tests + confi
 - Worktrees live in `~/Work/omarchy-spotify-worktrees/` (override: `OMARCHY_SPOTIFY_WORKTREES`).
   They must stay **outside** `~/.config/omarchy/plugins/`, or the shell would load them as
   duplicate plugins with the same id.
+- The shell's hot reload does **not** reliably pick up a branch switch (it kept running the old QML),
+  so `scripts/live` runs `workflow.reloadCmd` (`omarchy restart shell`) afterwards. Restarting briefly
+  blinks the bar. After editing files in the live checkout itself, run it manually if the UI looks stale.
 - `dev` is checked out in its own worktree (`.../dev`), so `scripts/live dev` uses a detached
   checkout of dev's commit. Re-run `scripts/live dev` after landing something new.
 - Commit messages: short imperative subject (`Add playlist picker to the panel`). Keep commits

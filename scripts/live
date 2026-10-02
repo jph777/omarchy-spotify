@@ -10,4 +10,8 @@ case "${1:-status}" in
   status) ;;
   *) die "usage: scripts/live dev|stable|status" ;;
 esac
+# Some apps cache code across a branch switch; workflow.reloadCmd (git config) restarts them.
+if [ "${1:-status}" != status ] && reload=$(git config workflow.reloadCmd); then
+  echo "reloading: $reload"; sh -c "$reload" >/dev/null 2>&1 || echo "warning: reload command failed" >&2
+fi
 echo "live plugin: $(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEAD)  (dev=$(git rev-parse --short dev) stable=$(git rev-parse --short stable))"
