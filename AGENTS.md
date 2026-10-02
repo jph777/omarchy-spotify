@@ -61,6 +61,10 @@ scripts/promote                   # USER ONLY, in a real terminal: tests + confi
   the branch while iterating. Don't land a `feat/*` branch into `dev` until the user says the
   feature is finalized; test it meanwhile with `scripts/live feat/<name>`. Fixes and chores use
   `--no-ff` merges. Never squash or rewrite history that has already been pushed without asking.
+- **Every branch lives on `origin` too: no local-only branches.** Push a `feat/*` (or any) branch as soon as
+  you create it (`git push -u origin <branch>`) and push after every commit, so GitHub and the local
+  worktree never differ. When a branch is landed or abandoned, delete it locally and on origin
+  (`git push origin --delete <branch>`). Only the `backup/*` safety refs may stay local, and only briefly.
 - Commit messages: short imperative subject (`Add playlist picker to the panel`). Keep commits
   focused and don't reformat or rename unrelated code, which keeps upstream merges conflict-free.
 - Prefer **new files** for new features and touch `Panel.qml`, `Service.qml` and

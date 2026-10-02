@@ -22,4 +22,5 @@ git -C "$DEV_WT" push origin dev
 [ -z "$dir" ] || git -C "$LIVE" worktree remove "$dir"
 if [ "$squash" = 1 ]; then flag=-D; else flag=-d; fi   # a squashed branch is never an ancestor of dev
 git -C "$DEV_WT" branch "$flag" "$b"
+git -C "$DEV_WT" push -q origin --delete "$b" 2>/dev/null || true   # keep GitHub and local in sync
 echo "landed $b on dev. Test live with: scripts/live dev"

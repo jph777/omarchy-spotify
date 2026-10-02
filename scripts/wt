@@ -4,4 +4,5 @@
 [ $# -eq 1 ] || die "usage: scripts/wt <feat/name|fix/name|...>"
 dir=$WT_ROOT/$(echo "$1" | tr / -)
 git -C "$LIVE" worktree add -b "$1" "$dir" dev
+git -C "$dir" push -q -u origin "$1" 2>/dev/null || echo "warning: could not push $1 to origin; push it before you stop" >&2
 echo "$dir"
