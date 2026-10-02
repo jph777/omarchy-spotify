@@ -1,14 +1,14 @@
 #!/bin/sh
-# Usage: scripts/live dev|stable|status
+# Usage: scripts/live dev|stable|<branch>|status     (<branch>: test an unfinalized feat/* before it lands)
 # Switches what the running bar plugin loads (it hot-reloads on checkout).
 . "$(dirname "$0")/_lib.sh"
 cd "$LIVE"
 case "${1:-status}" in
-  dev|stable)
-    [ -z "$(git status --porcelain)" ] || die "live plugin dir has uncommitted changes"
-    if [ "$1" = dev ]; then git switch --detach dev; else git switch stable; fi ;;
   status) ;;
-  *) die "usage: scripts/live dev|stable|status" ;;
+  *)
+    git rev-parse --verify -q "refs/heads/$1" >/dev/null || die "usage: scripts/live dev|stable|<branch>|status"
+    [ -z "$(git status --porcelain)" ] || die "live plugin dir has uncommitted changes"
+    if [ "$1" = stable ]; then git switch stable; else git switch --detach "$1"; fi ;;
 esac
 # Some apps cache code across a branch switch; workflow.reloadCmd (git config) restarts them.
 if [ "${1:-status}" != status ] && reload=$(git config workflow.reloadCmd); then

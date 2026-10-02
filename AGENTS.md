@@ -25,7 +25,7 @@ Any agent (Claude, Codex, others) follows this file. `CLAUDE.md` only points her
 | Branch | Role | Who moves it |
 |---|---|---|
 | `upstream` | Pristine mirror of `ninepointlabs` `main`. Never any of our commits. | `scripts/sync-upstream` only |
-| `dev` | Integration branch. All `feat/*`, `fix/*`, `chore/*` branches land here. | `scripts/land` |
+| `dev` | Integration branch. Every `feat/*`, `fix/*`, `chore/*` branch lands here. | `scripts/land` |
 | `stable` | Tested, smoke-tested code. GitHub default branch. What the bar normally runs. | `scripts/promote` (user only) |
 
 Invariant: `upstream` ⊂ `dev`, and `stable` ⊂ `dev` (stable is always an ancestor of dev, so
@@ -38,8 +38,10 @@ use `refs/heads/upstream` for the branch or `upstream/main` for the remote one.
 scripts/setup                  # once per clone: hooks + safety config + dev worktree
 scripts/wt feat/add-to-playlist   # new branch off dev in its own worktree; work and commit there
 sh tests/run                      # must pass before landing
-scripts/land feat/add-to-playlist # tests, merge --no-ff into dev, push dev, clean up
+scripts/land feat/add-to-playlist "Summary"  # feat/*: tests, SQUASH into one commit on dev, push, clean up
+scripts/land fix/my-fix           # everything else: tests, merge --no-ff into dev, push, clean up
 scripts/live dev                  # user: point the running bar at dev to smoke test it
+scripts/live feat/add-to-playlist # ...or at an unfinalized feature branch
 scripts/live stable               # back to stable
 scripts/promote                   # USER ONLY, in a real terminal: tests + confirm, then stable = dev, pushed
 ```
@@ -54,6 +56,11 @@ scripts/promote                   # USER ONLY, in a real terminal: tests + confi
   blinks the bar. After editing files in the live checkout itself, run it manually if the UI looks stale.
 - `dev` is checked out in its own worktree (`.../dev`), so `scripts/live dev` uses a detached
   checkout of dev's commit. Re-run `scripts/live dev` after landing something new.
+- **Features are developed on their own `feat/*` branch and squash-merged into `dev`** (the user's
+  preference), so each feature is one clearly labeled commit on the `dev` timeline. Commit freely on
+  the branch while iterating. Don't land a `feat/*` branch into `dev` until the user says the
+  feature is finalized; test it meanwhile with `scripts/live feat/<name>`. Fixes and chores use
+  `--no-ff` merges. Never squash or rewrite history that has already been pushed without asking.
 - Commit messages: short imperative subject (`Add playlist picker to the panel`). Keep commits
   focused and don't reformat or rename unrelated code, which keeps upstream merges conflict-free.
 - Prefer **new files** for new features and touch `Panel.qml`, `Service.qml` and
