@@ -65,6 +65,11 @@ scripts/promote                   # USER ONLY, in a real terminal: tests + confi
   you create it (`git push -u origin <branch>`) and push after every commit, so GitHub and the local
   worktree never differ. When a branch is landed or abandoned, delete it locally and on origin
   (`git push origin --delete <branch>`). Only the `backup/*` safety refs may stay local, and only briefly.
+- **Delete a `feat/*` branch as soon as it is squash-merged into `dev`**, locally and on `origin`. Git never
+  sees a squashed branch as merged (it is not an ancestor of `dev`), so it will not warn about it and it
+  would linger. `scripts/land` does this for you (`branch -D` plus `push origin --delete`); if you merge
+  by hand, delete both copies yourself, and remove its worktree. Check with `git branch -a` that no
+  `feat/*` branch outlives its landing commit.
 - Commit messages: short imperative subject (`Add playlist picker to the panel`). Keep commits
   focused and don't reformat or rename unrelated code, which keeps upstream merges conflict-free.
 - Prefer **new files** for new features and touch `Panel.qml`, `Service.qml` and
