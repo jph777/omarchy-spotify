@@ -113,3 +113,65 @@ test("the QML starts programs only through closed-environment Process objects", 
   assert.ok(processes >= 3)
   assert.equal(closed, processes)
 })
+
+test("filterByName matches every word, ignores case, and keeps the list for an empty query", () => {
+  const items = [{ name: "Liked Songs" }, { name: "Road Trip 2024" }, { name: "Focus: Deep Work" }, { name: "" }, {}]
+  const names = (query) => Model.filterByName(items, query).map((item) => item.name)
+  assert.deepEqual(names(""), ["Liked Songs", "Road Trip 2024", "Focus: Deep Work", "", undefined])
+  assert.deepEqual(names("   "), names(""))
+  assert.deepEqual(names("road"), ["Road Trip 2024"])
+  assert.deepEqual(names("TRIP road"), ["Road Trip 2024"])
+  assert.deepEqual(names("deep  work"), ["Focus: Deep Work"])
+  assert.deepEqual(names("o"), ["Liked Songs", "Road Trip 2024", "Focus: Deep Work"])
+  assert.deepEqual(names("zzz"), [])
+  assert.deepEqual(plain(Model.filterByName([], "x")), [])
+})
+
+test("artPending is true only while a cover URL has no entry in the files map", () => {
+  const url = "https://i.scdn.co/image/x"
+  assert.equal(Model.artPending(null, {}), false)
+  assert.equal(Model.artPending({ name: "no cover" }, {}), false)
+  assert.equal(Model.artPending({ artUrl: url }, {}), true)
+  assert.equal(Model.artPending({ artUrl: url }), true)
+  assert.equal(Model.artPending({ artUrl: url }, { [url]: "/c/x.jpg" }), false)
+  // A failed fetch is recorded as an empty path and is settled, not pending.
+  assert.equal(Model.artPending({ artUrl: url }, { [url]: "" }), false)
+  // A pending cover has no remote source to load directly.
+  assert.equal(Model.artSource({ art: "", artUrl: url }), "")
+  assert.equal(Model.artSource({ artPath: "/c/x.jpg" }), "file:///c/x.jpg")
+  assert.equal(Model.artSource({ artPath: "" }), "")
+})
+
+test("revealSchedule staggers pending covers, caps the stagger, and keeps starts it already has", () => {
+  const pending = (n) => ({ artUrl: "https://i.scdn.co/image/" + n })
+  const items = [pending("a"), { name: "Liked", artUrl: "" }, pending("b"), pending("done"), pending("c"), pending("d")]
+  const files = { "https://i.scdn.co/image/done": "/c/done.jpg" }
+  assert.deepEqual(plain(Model.revealSchedule(items, {}, 1000, 25, 2, files)), {
+    "https://i.scdn.co/image/a": 1000,
+    "https://i.scdn.co/image/b": 1025,
+    "https://i.scdn.co/image/c": 1050,
+    "https://i.scdn.co/image/d": 1050
+  })
+  // An existing start is never moved, even for a later reload.
+  const again = plain(Model.revealSchedule(items, { "https://i.scdn.co/image/a": 500 }, 9000, 25, 2, files))
+  assert.equal(again["https://i.scdn.co/image/a"], 500)
+  assert.equal(again["https://i.scdn.co/image/b"], 9025)
+})
+
+test("revealSchedule drops a resolved start only after the grace period", () => {
+  const resolved = [{ artUrl: "https://i.scdn.co/image/x" }]
+  const files = { "https://i.scdn.co/image/x": "/c/x.jpg" }
+  const existing = { "https://i.scdn.co/image/x": 10000 }
+  assert.deepEqual(plain(Model.revealSchedule(resolved, existing, 11000, 25, 8, files)), existing)
+  assert.deepEqual(plain(Model.revealSchedule(resolved, existing, 14000, 25, 8, files)), {})
+  assert.deepEqual(plain(Model.revealSchedule([], null, 1, 25, 8)), {})
+})
+
+test("revealProgress is 0 before the start, 1 after, and 1 when there is no reveal", () => {
+  assert.equal(Model.revealProgress(1000, 0, 450), 1)
+  assert.equal(Model.revealProgress(1000, undefined, 450), 1)
+  assert.equal(Model.revealProgress(900, 1000, 450), 0)
+  assert.equal(Model.revealProgress(1225, 1000, 450), 0.5)
+  assert.equal(Model.revealProgress(1450, 1000, 450), 1)
+  assert.equal(Model.revealProgress(5000, 1000, 450), 1)
+})

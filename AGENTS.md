@@ -93,8 +93,7 @@ the user to smoke test and promote. Never promote an upstream merge on your own.
 ## Facts
 
 - The plugin talks to Spotify via the user's own developer app (`clientId` in
-  `~/.config/omarchy/shell.json`). It requests only read scopes today; anything that writes
-  (playlists) needs new OAuth scopes and a one-time reconnect, so mention that to the user.
+  `~/.config/omarchy/shell.json`). It requests the playlist read and modify scopes (add-to-playlist).
 - The plugin hot-reloads on file save in the live dir. Settings are managed with
   `omarchy bar set ninepointlabs.spotify <key> <value>`.
 - Soloist is the user's headless player (a separate systemd user service, not in this repo).

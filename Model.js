@@ -28,6 +28,7 @@ var glyph = {
   refresh: "󰑐",
   refreshing: "󰑓",
   queue: "󰐕",
+  playlistAdd: "󰐒",
   check: "󰄬",
   artist: "󰠃",
   album: "󰀥",
@@ -106,6 +107,45 @@ function artSource(item) {
   if (!item) return ""
   if (item.artPath) return fileUrl(item.artPath)
   return item.art || ""
+}
+
+// A cover that is on its way: the list has its URL but no file for it yet. `files`
+// maps cover URL -> file path ("" once a fetch has failed); a URL that is in it,
+// even with an empty path, is settled.
+function artPending(item, files) {
+  return !!(item && item.artUrl && !(files && files[item.artUrl] !== undefined))
+}
+
+// Start times (epoch ms) for the cover reveal, keyed by cover URL. Pending covers
+// get `now + min(k, maxStagger) * stagger`, k being their place among the pending
+// ones, so the first rows cascade. A start that already exists is kept so a list
+// reload does not restart a reveal; one that has resolved is kept for a few
+// seconds longer so a row rebuilt mid-reveal can still finish it.
+function revealSchedule(items, existing, now, stagger, maxStagger, files) {
+  var keepMs = 3000
+  var pending = {}
+  for (var i = 0; i < items.length; i++) {
+    if (artPending(items[i], files)) pending[items[i].artUrl] = true
+  }
+  var out = {}
+  for (var url in existing || {}) {
+    if (pending[url] || existing[url] > now - keepMs) out[url] = existing[url]
+  }
+  var k = 0
+  for (var j = 0; j < items.length; j++) {
+    if (!artPending(items[j], files)) continue
+    if (!out.hasOwnProperty(items[j].artUrl)) out[items[j].artUrl] = now + Math.min(k, maxStagger) * stagger
+    k++
+  }
+  return out
+}
+
+// How far a reveal has got: 0 before it starts, 1 when done or when there is no
+// reveal at all (start 0 or missing).
+function revealProgress(now, startMs, durationMs) {
+  if (!startMs) return 1
+  var p = (now - startMs) / durationMs
+  return p < 0 ? 0 : (p > 1 ? 1 : p)
 }
 
 function typeGlyph(type) {
@@ -298,6 +338,17 @@ function detailRows(detail) {
   for (var i = 0; i < detail.items.length; i++) rows.push(itemRow(detail.items[i], { index: i }))
   if (detail.total > detail.items.length) rows.push(noteRow("Showing the first " + detail.items.length + " of " + detail.total + "."))
   return rows
+}
+
+// Case-insensitive name filter: every word of the query must appear in the name.
+// An empty query returns the list unchanged.
+function filterByName(items, query) {
+  var words = String(query || "").toLowerCase().split(/\s+/).filter(function(w) { return w !== "" })
+  if (words.length === 0) return items
+  return items.filter(function(item) {
+    var name = String(item && item.name || "").toLowerCase()
+    return words.every(function(w) { return name.indexOf(w) !== -1 })
+  })
 }
 
 function firstItemIndex(rows, from, step) {

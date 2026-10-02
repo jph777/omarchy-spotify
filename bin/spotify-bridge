@@ -60,11 +60,14 @@ SCOPES = [
     "user-library-modify",
     "playlist-read-private",
     "playlist-read-collaborative",
+    "playlist-modify-public",
+    "playlist-modify-private",
 ]
 
 HTTP_TIMEOUT = 15
 ART_TIMEOUT = 8
 ART_WORKERS = 8
+ART_BATCH_MAX = 64
 ART_MAX_BYTES = 8 * 1024 * 1024
 # Every Web API and token reply is JSON far below this. A larger body is
 # refused before it is decoded or parsed.
@@ -883,6 +886,25 @@ def art_dir():
         return _ART_DIR
 
 
+def cover_is_sound(st):
+    """A cached cover must be ours alone: a regular file, one link, not writable by others."""
+    return (stat.S_ISREG(st.st_mode) and st.st_uid == os.geteuid() and st.st_nlink == 1
+            and not st.st_mode & 0o022 and 0 < st.st_size <= ART_MAX_BYTES)
+
+
+def cached_art_path(url):
+    """Where a cover is already cached, or "". No network, no side effects."""
+    if not art_url_allowed(url):
+        return ""
+    name = hashlib.sha1(url.encode("utf-8")).hexdigest()[:28] + ".jpg"
+    try:
+        held = art_dir()
+        st = os.stat(name, dir_fd=held.fd, follow_symlinks=False)
+        return held.entry(name) if cover_is_sound(st) else ""
+    except Exception:
+        return ""
+
+
 def cache_one(url):
     if not art_url_allowed(url):
         return ""
@@ -894,8 +916,7 @@ def cache_one(url):
         except FileNotFoundError:
             st = None
         if st is not None:
-            if (stat.S_ISREG(st.st_mode) and st.st_uid == os.geteuid() and st.st_nlink == 1
-                    and not st.st_mode & 0o022 and 0 < st.st_size <= ART_MAX_BYTES):
+            if cover_is_sound(st):
                 return held.entry(name)
             # Anything else under that name — a symlink, a FIFO, somebody
             # else's file — is taken out and the cover fetched again.
@@ -1938,7 +1959,26 @@ def cmd_playlists(args):
         liked_total = int(liked.get("total") or 0)
     except ApiError:
         liked_total = 0
+    if args.no_art:
+        # The list comes back at once; the covers follow through the `art` command.
+        # The remote URL moves to `artUrl` so the panel never loads it directly, and a
+        # cover that is already on disk comes back as `artPath` right away.
+        for item in items:
+            url = item.get("art", "")
+            item["artUrl"], item["art"] = url, ""
+            item["artPath"] = cached_art_path(url) if url else ""
+        out({"items": items, "likedCount": liked_total})
+        return
     out({"items": cache_art(items), "likedCount": liked_total})
+
+
+def cmd_art(args):
+    """Download covers into the cache and say where each landed. A URL that is
+    not an allowed Spotify image host maps to an empty path."""
+    urls = sorted(set(args.urls))[:ART_BATCH_MAX]
+    with ThreadPoolExecutor(max_workers=ART_WORKERS) as pool:
+        paths = dict(zip(urls, pool.map(cache_one, urls)))
+    out({"paths": paths})
 
 
 def cmd_playlist_items(args):
@@ -1952,6 +1992,17 @@ def cmd_playlist_items(args):
         if norm and norm.get("uri"):
             items.append(norm)
     out({"items": cache_art(items), "total": int(total or len(items))})
+
+
+def cmd_playlist_add(args):
+    # Tracks and episodes only. The 2026 API names the collection "items".
+    playlist = safe_id(args.id)
+    uris = safe_uris(args.uris)
+    for uri in uris:
+        if not uri.startswith(("spotify:track:", "spotify:episode:")):
+            raise ApiError("bad_args", "Only tracks and episodes can be added to a playlist")
+    api("POST", "/playlists/%s/items" % playlist, body={"uris": uris})
+    out({"added": uris, "playlist": playlist})
 
 
 def cmd_liked(args):
@@ -2100,8 +2151,10 @@ def build_parser():
     sub.add_parser("queue").set_defaults(fn=cmd_queue)
     p = sub.add_parser("recent"); p.add_argument("--limit", type=int, default=12); p.set_defaults(fn=cmd_recent)
 
-    p = sub.add_parser("playlists"); p.add_argument("--limit", type=int, default=500); p.set_defaults(fn=cmd_playlists)
+    p = sub.add_parser("playlists"); p.add_argument("--limit", type=int, default=500); p.add_argument("--no-art", action="store_true"); p.set_defaults(fn=cmd_playlists)
+    p = sub.add_parser("art"); p.add_argument("urls", nargs="+"); p.set_defaults(fn=cmd_art)
     p = sub.add_parser("playlist-items"); p.add_argument("id"); p.add_argument("--limit", type=int, default=300); p.set_defaults(fn=cmd_playlist_items)
+    p = sub.add_parser("playlist-add"); p.add_argument("id"); p.add_argument("uris", nargs="+"); p.set_defaults(fn=cmd_playlist_add)
     p = sub.add_parser("liked"); p.add_argument("--limit", type=int, default=100); p.set_defaults(fn=cmd_liked)
     p = sub.add_parser("audiobooks"); p.add_argument("--limit", type=int, default=200); p.set_defaults(fn=cmd_audiobooks)
     p = sub.add_parser("audiobook-chapters"); p.add_argument("id"); p.add_argument("--limit", type=int, default=300); p.set_defaults(fn=cmd_audiobook_chapters)

@@ -132,6 +132,16 @@ Item {
   property bool playlistsLoading: false
   property string playlistsError: ""
   property double playlistsLoadedAt: 0
+  // Keep resolved covers across list reloads (one in-memory cache for every playlist view).
+  property bool coverCache: true
+  // Where each playlist cover is on disk (artUrl -> path, "" if it could not be fetched).
+  // It lives apart from `playlists` so a cover arriving updates only its tile; replacing
+  // the list would rebuild every row.
+  property var coverFiles: ({})
+  property int _coverSerial: 0
+  // When each pending cover's reveal starts (artUrl -> epoch ms). It lives here, not
+  // in the cover, because the rows are rebuilt whenever a batch of covers lands.
+  property var coverRevealAt: ({})
 
   property var audiobooks: []
   property bool audiobooksLoading: false
@@ -459,8 +469,11 @@ Item {
       root.authenticated = false
       root.needsReauth = false
       root.user = ({})
+      root.pickerItem = null
       root.player = ({ active: false })
       root.playlists = []
+      root.coverRevealAt = ({})
+      root.coverFiles = ({})
       root.audiobooks = []
       root.shows = []
       root.recent = []
@@ -682,6 +695,64 @@ Item {
     action(["queue-add", item.uri], null, "Queued " + (item.name || ""))
   }
 
+  // ------------------------------------------------- add to a playlist --
+
+  // The track or episode the picker is open for, or null when it is closed.
+  property var pickerItem: null
+  readonly property bool pickerOpen: pickerItem !== null
+
+  // Playlists the user may add to: their own, collaborative ones, and Liked Songs.
+  readonly property var addTargets: {
+    var mine = user && user.id ? user.id : ""
+    var out = []
+    for (var i = 0; i < playlists.length; i++) {
+      var p = playlists[i]
+      if (p.liked === true || p.collaborative === true || (mine !== "" && p.ownerId === mine)) out.push(p)
+    }
+    return out
+  }
+
+  function openPicker(item) {
+    if (!authenticated || !item || !item.uri) return
+    if (item.type !== "track" && item.type !== "episode") return
+    pickerItem = item
+    loadPlaylists(false)
+  }
+
+  function closePicker() { pickerItem = null }
+
+  // True while the picker is open for this exact item.
+  function pickerOpenFor(uri) { return pickerItem !== null && uri !== "" && pickerItem.uri === uri }
+
+  // The add button: opens the picker, or closes it if it is already open for this item.
+  function togglePicker(item) {
+    if (!item) return
+    if (pickerOpenFor(item.uri)) closePicker()
+    else openPicker(item)
+  }
+
+  function addToPlaylist(target) {
+    var item = pickerItem
+    if (!item || !target) return
+    var name = target.name || "playlist"
+    if (target.liked === true) {
+      closePicker()
+      action(["library-save", item.uri], function() {
+        var next = {}
+        for (var k in root.savedByUri) next[k] = root.savedByUri[k]
+        next[item.uri] = true
+        root.savedByUri = next
+        root.playlistsLoadedAt = 0
+      }, "Saved to Liked Songs")
+      return
+    }
+    closePicker()
+    action(["playlist-add", target.id, item.uri], function() {
+      root.playlistsLoadedAt = 0
+      root.loadPlaylists(true)
+    }, "Added to " + name)
+  }
+
   function playLiked() {
     call(["liked", "--limit", "100"], function(result) {
       if (!result.ok) { root.absorbAuthError(result); root.flash(result.error, true); return }
@@ -830,17 +901,65 @@ Item {
     if (!force && playlistsLoadedAt > 0 && Date.now() - playlistsLoadedAt < staleMs) return
     playlistsLoading = true
     playlistsError = ""
-    call(["playlists"], function(result) {
+    call(["playlists", "--no-art"], function(result) {
       root.playlistsLoading = false
       if (!result.ok) { if (!root.absorbAuthError(result)) root.playlistsError = result.error; return }
       var items = result.data.items || []
+      var files = {}
+      if (root.coverCache) {
+        for (var f in root.coverFiles) files[f] = root.coverFiles[f]
+      }
+      for (var n = 0; n < items.length; n++) {
+        if (items[n].artUrl && items[n].artPath) files[items[n].artUrl] = items[n].artPath
+      }
+      root.coverFiles = files
       root.likedCount = Number(result.data.likedCount) || 0
       if (root.likedCount > 0) {
         items = [{ type: "playlist", id: "__liked__", uri: "", name: "Liked Songs", owner: "", count: root.likedCount, art: "", artPath: "", liked: true }].concat(items)
       }
+      root.coverRevealAt = Model.revealSchedule(items, root.coverRevealAt, Date.now(), 25, 8, files)
       root.playlists = items
       root.playlistsLoadedAt = Date.now()
+      root.loadPlaylistCovers()
     })
+  }
+
+  // Start time of this item's cover reveal, or 0 when it has none (cached covers,
+  // anything that is not a playlist cover).
+  function revealAtFor(item) {
+    return item && item.artUrl && coverRevealAt[item.artUrl] ? coverRevealAt[item.artUrl] : 0
+  }
+
+  // The file URL to show for a playlist's cover, or "" while it is still loading.
+  function coverSource(item) {
+    if (item && item.artUrl) return Model.artSource({ artPath: coverFiles[item.artUrl] || "" })
+    return Model.artSource(item)
+  }
+
+  // Covers arrive after the list, a few at a time, top rows first. A cover that
+  // can't be fetched is recorded with an empty path, so it stops counting as loading.
+  function loadPlaylistCovers() {
+    var serial = ++_coverSerial
+    var batchSize = 8
+    function next() {
+      if (serial !== root._coverSerial) return
+      var urls = []
+      for (var i = 0; i < root.playlists.length && urls.length < batchSize; i++) {
+        var u = root.playlists[i].artUrl
+        if (u && root.coverFiles[u] === undefined && urls.indexOf(u) === -1) urls.push(u)
+      }
+      if (urls.length === 0) return
+      call(["art"].concat(urls), function(result) {
+        if (serial !== root._coverSerial) return
+        var paths = result.ok && result.data && result.data.paths ? result.data.paths : {}
+        var merged = {}
+        for (var k in root.coverFiles) merged[k] = root.coverFiles[k]
+        for (var j = 0; j < urls.length; j++) merged[urls[j]] = paths[urls[j]] || ""
+        root.coverFiles = merged
+        next()
+      })
+    }
+    next()
   }
 
   function loadAudiobooks(force) {

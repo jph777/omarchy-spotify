@@ -25,7 +25,11 @@ even play music with no Spotify window open at all.
   episodes and audiobooks, grouped. With nothing typed you see what you
   played recently.
 - **Playlists:** Liked Songs plus everything you made or follow. Open one to
-  see its tracks, play from any row, or shuffle the whole thing.
+  see its tracks, play from any row, or shuffle the whole thing. Add any track
+  or episode to a playlist you own or collaborate on (or to Liked Songs). The
+  list appears at once and each new cover comes in with a quick diagonal wipe
+  (covers you already have appear instantly); the Playlists tab and the
+  add-to-playlist list share one copy of the list.
 - **Books:** your saved audiobooks, with every chapter and how far you got.
 - **Podcasts:** shows you follow, with episodes, dates, length and progress.
 - **Devices:** switch between your computer, phone, speakers and so on, or
@@ -78,8 +82,9 @@ Click the chip. The panel shows three steps; here they are in full.
    *"redirect_uri: Not matching configuration"*, this line is wrong or was
    never saved.)
 3. Copy the app's **Client ID** into the panel and click **Connect**. Your
-   browser opens Spotify's permission page; approve it and the panel
-   switches to the player by itself.
+   browser opens Spotify's permission page (reading your playback and library,
+   controlling playback, and reading and editing your playlists); approve it and
+   the panel switches to the player by itself.
 
 That's the whole connection. It stays connected for six months; after that
 the panel shows the same card again and one click renews it.
@@ -222,7 +227,8 @@ is on a command line, without printing the key itself.
 | Cover in the panel | play / pause |
 | A row, click | play it (tracks, episodes, chapters, artists) or open it (playlists, albums, podcasts, audiobooks) |
 | A row, right click | add to queue |
-| Hover a row | reveals **+** (queue) and **▶** (play) |
+| Hover a row | reveals **+** (queue), the add-to-playlist button and **▶** (play) |
+| Playlist button (row, or next to the heart in the cover area) | pick a playlist to add that track or episode to |
 | Device button | switch device, start or stop Soloist, sign out |
 
 ### Keyboard cheat sheet
@@ -237,6 +243,7 @@ is on a command line, without printing the key itself.
 | `f` | save / unsave the current track |
 | `+` / `-` | volume up / down |
 | `q` | queue the highlighted row |
+| `a` | open the add-to-playlist list for the highlighted track (or what's playing); type to filter, `↑`/`↓` to choose, `Enter` to add, `Esc` to clear or close |
 | `/` | jump to the search box (`Esc` leaves it, `↓` jumps to results) |
 | `1` `2` `3` `4` or `h` / `l` | switch tabs |
 | `h` or `Esc` | go back out of a playlist, book or podcast |
@@ -258,8 +265,29 @@ them with `omarchy bar set ninepointlabs.spotify <key> <value>`.
 | `maxLabelWidth` | `180` | How wide that text may get before it scrolls. |
 | `defaultTab` | `"search"` | Which tab opens first. Remembers the last one you used. |
 
+## Adding to playlists
+
+Add a track or episode to a playlist without leaving the bar:
+
+- Hover a row and click the playlist button, or click the one next to the heart
+  in the cover area to add what's playing. From the keyboard, press `a` on the
+  highlighted row (or with nothing highlighted, to add what's playing).
+- The cursor lands in a **Filter playlists** box. Type to narrow the list (every
+  word you type must appear in the name), move with `↑` / `↓`, and press
+  `Enter` to add, or click a playlist. `Esc` clears the filter, and a second
+  `Esc` closes the list.
+- The button is a toggle: it turns the accent color while the list is open, and
+  clicking it again closes the list.
+
+The list shows each playlist's cover, owner and size, like the Playlists tab. It holds
+**Liked Songs**, every playlist you own, and collaborative playlists. Playlists
+other people made can't be edited, so they aren't offered.
+
 ## If something's off
 
+- **A playlist is missing from the picker:** only playlists you own or that are
+  collaborative are listed. Open the panel's playlists tab and press `r` to
+  refresh if you just created one.
 - **"redirect_uri: Not matching configuration"** when connecting: the
   redirect URI in your Spotify app is not exactly
   `http://127.0.0.1:8888/callback`, or wasn't saved. Fix it, then click

@@ -701,5 +701,107 @@ class ExecutableTests(TempHome):
         self.assertIn("PATH=" + bridge.TRUSTED_PATH, text.splitlines())
 
 
+class PlaylistAddTests(TempHome):
+    """playlist-add: the new write path must validate before it calls Spotify
+    and send exactly one POST to /items."""
+
+    TRACK = "spotify:track:4uLU6hMCjMI75M1A2tKUQC"
+    EPISODE = "spotify:episode:512ojhOuo1ktJprKbVcKyQ"
+
+    def run_cmd(self, playlist, *uris):
+        args = bridge.build_parser().parse_args(["playlist-add", playlist, *uris])
+        buf = io.StringIO()
+        with mock.patch.object(sys, "stdout", buf):
+            args.fn(args)
+        return json.loads(buf.getvalue())
+
+    def test_the_login_asks_for_both_write_scopes(self):
+        self.assertIn("playlist-modify-public", bridge.SCOPES)
+        self.assertIn("playlist-modify-private", bridge.SCOPES)
+
+    def test_adds_tracks_and_episodes_with_one_post_to_items(self):
+        with mock.patch.object(bridge, "api", return_value={"snapshot_id": "s"}) as api:
+            result = self.run_cmd("37i9dQZF1DXcBWIGoYBM5M", self.TRACK, self.EPISODE)
+        api.assert_called_once()
+        method, path = api.call_args.args[:2]
+        self.assertEqual((method, path), ("POST", "/playlists/37i9dQZF1DXcBWIGoYBM5M/items"))
+        self.assertEqual(api.call_args.kwargs["body"], {"uris": [self.TRACK, self.EPISODE]})
+        self.assertEqual(result["data"]["added"], [self.TRACK, self.EPISODE])
+
+    def test_bad_ids_and_uris_are_refused_before_any_request(self):
+        for playlist, uri in (("../me", self.TRACK), ("abc/def", self.TRACK),
+                              ("37i9dQZF1DXcBWIGoYBM5M", "spotify:album:4uLU6hMCjMI75M1A2tKUQC"),
+                              ("37i9dQZF1DXcBWIGoYBM5M", "spotify:artist:4uLU6hMCjMI75M1A2tKUQC"),
+                              ("37i9dQZF1DXcBWIGoYBM5M", "not-a-uri")):
+            with self.subTest(playlist=playlist, uri=uri), mock.patch.object(bridge, "api") as api:
+                with self.assertRaises(bridge.ApiError) as ctx:
+                    self.run_cmd(playlist, uri)
+                self.assertEqual(ctx.exception.code, "bad_args")
+                api.assert_not_called()
+
+
+class PlaylistCoverTests(TempHome):
+    """The playlists command can return before any cover is downloaded, and the
+    art command fetches covers only from Spotify's image hosts."""
+
+    CDN = "https://i.scdn.co/image/ab67616d00001e02aaaaaaaaaaaaaaaaaaaaaaaa"
+
+    def run_cmd(self, argv):
+        args = bridge.build_parser().parse_args(argv)
+        buf = io.StringIO()
+        with mock.patch.object(sys, "stdout", buf):
+            args.fn(args)
+        return json.loads(buf.getvalue())["data"]
+
+    def raw_playlist(self):
+        return {"id": "p1", "uri": "spotify:playlist:p1", "name": "Mix", "owner": {"id": "me"},
+                "items": {"total": 3}, "images": [{"url": self.CDN, "width": 64, "height": 64}]}
+
+    def test_no_art_returns_the_list_without_downloading_and_keeps_the_url_aside(self):
+        with mock.patch.object(bridge, "paged", return_value=([self.raw_playlist()], 1)), \
+             mock.patch.object(bridge, "api", return_value={"total": 5}), \
+             mock.patch.object(bridge, "cache_art") as cache_art, \
+             mock.patch.object(bridge, "cache_one") as cache_one:
+            data = self.run_cmd(["playlists", "--no-art"])
+        cache_art.assert_not_called()
+        cache_one.assert_not_called()
+        item = data["items"][0]
+        self.assertEqual(item["art"], "")
+        self.assertEqual(item["artUrl"], self.CDN)
+        self.assertEqual(item["artPath"], "")
+
+    def test_no_art_reports_a_cover_that_is_already_on_disk(self):
+        with mock.patch.object(bridge, "paged", return_value=([self.raw_playlist()], 1)), \
+             mock.patch.object(bridge, "api", return_value={"total": 5}), \
+             mock.patch.object(bridge, "cached_art_path", return_value="/cache/x.jpg") as cached, \
+             mock.patch.object(bridge, "cache_one") as cache_one:
+            data = self.run_cmd(["playlists", "--no-art"])
+        cached.assert_called_once_with(self.CDN)
+        cache_one.assert_not_called()
+        self.assertEqual(data["items"][0]["artPath"], "/cache/x.jpg")
+
+    def test_cached_art_path_only_trusts_a_sound_file_it_finds(self):
+        self.assertEqual(bridge.cached_art_path("https://evil.example/x.jpg"), "")
+        self.assertEqual(bridge.cached_art_path(self.CDN), "")          # nothing cached yet
+        with mock.patch.object(bridge, "http_raw", return_value=(200, b"jpegdata", {})):
+            fetched = bridge.cache_one(self.CDN)
+        self.assertTrue(fetched)
+        self.assertEqual(bridge.cached_art_path(self.CDN), fetched)
+
+    def test_art_maps_each_url_to_its_cached_path(self):
+        other = self.CDN.replace("aaaa", "bbbb")
+        with mock.patch.object(bridge, "cache_one", side_effect=lambda url: "/cache/" + url[-4:] + ".jpg"):
+            data = self.run_cmd(["art", self.CDN, other, self.CDN])
+        self.assertEqual(sorted(data["paths"]), sorted({self.CDN, other}))
+        self.assertTrue(all(path.startswith("/cache/") for path in data["paths"].values()))
+
+    def test_art_refuses_hosts_that_are_not_spotify_images(self):
+        bad = ["http://i.scdn.co/image/x", "https://evil.example/x.jpg", "https://user:pw@i.scdn.co/x", "file:///etc/passwd"]
+        with mock.patch.object(bridge, "http_raw") as http_raw:
+            data = self.run_cmd(["art"] + bad)
+        http_raw.assert_not_called()
+        self.assertEqual(set(data["paths"].values()), {""})
+
+
 if __name__ == "__main__":
     unittest.main()

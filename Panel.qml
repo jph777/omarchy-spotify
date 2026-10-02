@@ -50,6 +50,27 @@ Panel {
   property bool deviceMenuOpen: false
   property bool countedOpen: false
   property bool _returnFired: false
+  // Highlighted target while the add-to-playlist picker is open.
+  property int pickerIndex: 0
+  readonly property bool pickerOpen: service ? service.pickerOpen : false
+  property string pickerFilter: ""
+  readonly property var pickerTargets: service ? Model.filterByName(service.addTargets, pickerFilter) : []
+
+  // A new picker (or a switch to another track) starts with an empty filter and the
+  // cursor in the filter box; closing hands the keyboard back to the panel.
+  Connections {
+    target: root.service
+    function onPickerItemChanged() {
+      if (root.service && root.service.pickerItem) {
+        root.pickerFilter = ""
+        pickerField.text = ""
+        root.pickerIndex = 0
+        Qt.callLater(function() { pickerField.forceActiveFocus() })
+      } else {
+        keyCatcher.forceActiveFocus()
+      }
+    }
+  }
 
   readonly property bool authenticated: service ? service.authenticated === true : false
   readonly property bool needsSetup: service && service.probed && !authenticated
@@ -202,6 +223,21 @@ Panel {
     if (item.type === "track" || item.type === "episode" || item.type === "chapter") service.queueAdd(item)
   }
 
+  // `a`: the highlighted track or episode, else whatever is playing.
+  function addRow(index) {
+    if (!service) return
+    var item = null
+    if (index >= 0 && index < rows.length && rows[index].kind === "item") item = rows[index].item
+    if (!item || (item.type !== "track" && item.type !== "episode")) item = service.nowItem
+    pickerIndex = 0
+    service.togglePicker(item)
+  }
+
+  function pickTarget(index) {
+    if (!service || index < 0 || index >= pickerTargets.length) return
+    service.addToPlaylist(pickerTargets[index])
+  }
+
   function goBack() {
     if (!service) return false
     if (detailOpen) {
@@ -309,60 +345,159 @@ Panel {
 
   // Cover art with rounded corners and a glyph placeholder. Reads root for
   // colors so callers only ever set `source` and `placeholder`.
+  // A cover tile. A cover that was not cached comes in with a diagonal wipe: a
+  // soft "/" edge crosses the tile once, over a fixed time, and behind it appears
+  // the finished tile (glyph, or the cover once it has loaded). Time alone drives
+  // the wipe, so a cover that lands early, mid-wipe or late all look right: an
+  // early one is revealed by the edge, a late one fades in afterwards.
   component RoundedArt: Item {
     id: art
     property string source: ""
     property string placeholder: Model.glyph.note
     property real cornerRadius: Style.cornerRadius > 0 ? Math.max(3, Math.round(width * 0.12)) : 0
+    // Epoch ms at which this tile's wipe starts; 0 means no wipe (cached covers).
+    property double revealAt: 0
+    // Linear 0..1 clock of the wipe; `eased` is what the edge follows.
+    property real progress: 1
+    readonly property real eased: progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2
+    readonly property bool revealing: progress < 1
+    // The edge has crossed the whole tile (the last tenth is its feather leaving),
+    // so a cover that lands now has nothing left to be revealed by.
+    readonly property bool edgePassed: eased >= 0.9
+    readonly property int revealMs: 450
+    readonly property real featherPx: 10
     readonly property bool showsImage: source !== "" && image.status === Image.Ready
 
+    // Start, or resume where the clock says we are: the rows are rebuilt whenever
+    // a batch of covers lands, so a tile can be created mid-wipe.
+    function startReveal() {
+      reveal.stop()
+      var p0 = Model.revealProgress(Date.now(), revealAt, revealMs)
+      if (revealAt === 0 || p0 >= 1) { progress = 1; return }
+      progress = p0
+      revealPause.duration = Math.max(0, revealAt - Date.now())
+      revealRun.from = p0
+      revealRun.duration = (1 - p0) * revealMs
+      reveal.start()
+    }
+    onRevealAtChanged: startReveal()
+    Component.onCompleted: startReveal()
+
+    SequentialAnimation {
+      id: reveal
+      PauseAnimation { id: revealPause }
+      NumberAnimation { id: revealRun; target: art; property: "progress"; to: 1 }
+    }
+
+    // What the edge has not reached yet: a dim empty tile (only needed during the wipe).
     Rectangle {
       anchors.fill: parent
+      visible: art.revealing
       radius: art.cornerRadius
-      color: Style.normalFillFor(root.foreground, root.accent)
+      color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
       border.width: Style.spacing.hairline
       border.color: Style.normalBorderFor(root.foreground, root.accent)
-      visible: !art.showsImage
     }
 
-    Text {
-      textFormat: Text.PlainText
-      anchors.centerIn: parent
-      visible: !art.showsImage
-      text: art.placeholder
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Math.max(Style.font.body, Math.round(art.width * 0.42))
-    }
-
-    Image {
-      id: image
+    // What the edge uncovers: the finished tile, and the cover over it once loaded.
+    // While the wipe runs this is a hidden texture that the mask below cuts.
+    Item {
+      id: revealed
       anchors.fill: parent
-      source: art.source
-      fillMode: Image.PreserveAspectCrop
-      asynchronous: true
-      smooth: true
-      mipmap: true
-      sourceSize.width: 320
-      sourceSize.height: 320
-      visible: false
-      layer.enabled: true
+      visible: !art.revealing
+      layer.enabled: art.revealing
+
+      Rectangle {
+        anchors.fill: parent
+        radius: art.cornerRadius
+        color: Style.normalFillFor(root.foreground, root.accent)
+        border.width: Style.spacing.hairline
+        border.color: Style.normalBorderFor(root.foreground, root.accent)
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        anchors.centerIn: parent
+        visible: coverFx.opacity < 1
+        text: art.placeholder
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Math.max(Style.font.body, Math.round(art.width * 0.42))
+      }
+
+      Image {
+        id: image
+        anchors.fill: parent
+        source: art.source
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: root.service ? root.service.coverCache : true
+        smooth: true
+        mipmap: true
+        sourceSize.width: 320
+        sourceSize.height: 320
+        visible: false
+        layer.enabled: true
+      }
+
+      Rectangle {
+        id: mask
+        anchors.fill: parent
+        radius: art.cornerRadius
+        visible: false
+        layer.enabled: true
+      }
+
+      MultiEffect {
+        id: coverFx
+        anchors.fill: parent
+        visible: opacity > 0
+        opacity: art.showsImage ? 1 : 0
+        source: image
+        maskEnabled: true
+        maskSource: mask
+        // Fade when the cover lands after the edge has passed; while the edge is still
+        // crossing the tile, the edge itself reveals it.
+        Behavior on opacity {
+          NumberAnimation { duration: art.revealAt !== 0 && art.edgePassed ? 180 : 0 }
+        }
+      }
     }
 
-    Rectangle {
-      id: mask
+    // The wipe mask: one big rectangle turned 45 degrees whose right edge is the "/"
+    // line. Its crossing of the tile's mid-line runs from just left of the tile to
+    // just right of it (plus the feather) as the wipe goes.
+    Item {
+      id: wipeMask
       anchors.fill: parent
-      radius: art.cornerRadius
       visible: false
-      layer.enabled: true
+      layer.enabled: art.revealing
+
+      Rectangle {
+        readonly property real feather: art.featherPx * Math.SQRT2
+        readonly property real edgeX: -art.height / 2 - feather + (art.width + art.height + 2 * feather) * art.eased
+        width: 2 * (art.width + art.height)
+        // Much taller than wide: the "/" edge is only this long, and it has to
+        // span the whole tile on both sides of the mid-line it crosses.
+        height: width + 4 * art.height
+        rotation: 45
+        x: edgeX - width / Math.SQRT2 - width / 2
+        y: art.height / 2 - height / 2
+        gradient: Gradient {
+          orientation: Gradient.Horizontal
+          GradientStop { position: 0.0; color: "white" }
+          GradientStop { position: 1 - art.featherPx / (2 * (art.width + art.height)); color: "white" }
+          GradientStop { position: 1.0; color: "transparent" }
+        }
+      }
     }
 
     MultiEffect {
       anchors.fill: parent
-      visible: art.showsImage
-      source: image
+      visible: art.revealing
+      source: revealed
       maskEnabled: true
-      maskSource: mask
+      maskSource: wipeMask
     }
   }
 
@@ -381,18 +516,27 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: searchField.activeFocus || clientIdField.activeFocus
+      blocked: searchField.activeFocus || clientIdField.activeFocus || pickerField.activeFocus
       onMoveRequested: function(dx, dy) {
+        if (root.pickerOpen) {
+          if (dy !== 0) root.pickerIndex = Math.max(0, Math.min(root.pickerTargets.length - 1, root.pickerIndex + dy))
+          return
+        }
         if (dy !== 0) root.moveCursor(dy)
         else if (dx < 0 && root.detailOpen) root.goBack()
         else if (dx !== 0 && !root.detailOpen) root.stepTab(dx)
       }
-      onReturnRequested: { root._returnFired = true; root.activateRow(root.cursorIndex) }
+      onReturnRequested: {
+        root._returnFired = true
+        if (root.pickerOpen) root.pickTarget(root.pickerIndex)
+        else root.activateRow(root.cursorIndex)
+      }
       onActivateRequested: {
         if (root._returnFired) { root._returnFired = false; return }
         if (root.service) root.service.playPause()
       }
       onCloseRequested: {
+        if (root.pickerOpen) { root.service.closePicker(); return }
         if (root.deviceMenuOpen) { root.deviceMenuOpen = false; return }
         if (root.goBack()) return
         if (root.currentTab === "search" && root.searchText !== "") { root.searchText = ""; return }
@@ -411,6 +555,7 @@ Panel {
         else if (t === "s") root.service.toggleShuffle()
         else if (t === "r") root.refresh()
         else if (t === "q") root.queueRow(root.cursorIndex)
+        else if (t === "a") root.addRow(root.cursorIndex)
         else if (t === "d") root.toggleDevices()
         else if (t === "f") root.service.toggleSaved()
         else if (t === "+" || t === "=") root.service.nudgeVolume(5)
@@ -718,7 +863,7 @@ Panel {
                   Text {
                     id: heroTitle
                     anchors.left: parent.left
-                    anchors.right: heartButton.left
+                    anchors.right: addToPlaylistButton.left
                     anchors.rightMargin: Style.space(6)
                     textFormat: Text.PlainText
                     text: Model.heroTitle(root.player)
@@ -727,6 +872,20 @@ Panel {
                     font.pixelSize: Style.font.heading
                     font.bold: true
                     elide: Text.ElideRight
+                  }
+
+                  PanelActionButton {
+                    id: addToPlaylistButton
+                    anchors.right: heartButton.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.nowUri !== "" && root.service && root.service.nowItem
+                      && (root.service.nowItem.type === "track" || root.service.nowItem.type === "episode")
+                    iconText: Model.glyph.playlistAdd
+                    tooltipText: root.service && root.service.pickerOpenFor(root.nowUri) ? "Close (a)" : "Add to a playlist (a)"
+                    foreground: root.service && root.service.pickerOpenFor(root.nowUri) ? root.accent : root.foreground
+                    hoverColor: root.accent
+                    fontFamily: root.fontFamily
+                    onClicked: root.addRow(-1)
                   }
 
                   PanelActionButton {
@@ -999,6 +1158,156 @@ Panel {
                 horizontalPadding: Style.space(10)
                 verticalPadding: Style.space(4)
                 onClicked: { if (!root.deviceMenuOpen) root.toggleDevices() }
+              }
+            }
+          }
+
+          // ------------------------------------------- add to playlist --
+          Column {
+            visible: root.authenticated && root.pickerOpen
+            width: parent.width
+            spacing: Style.space(4)
+
+            PanelSeparator { foreground: root.foreground }
+
+            PanelSectionHeader {
+              text: "ADD TO PLAYLIST" + (root.service && root.service.pickerItem && root.service.pickerItem.name ? " · " + root.service.pickerItem.name : "")
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: root.service && root.service.playlistsLoading && root.pickerTargets.length === 0
+              width: parent.width
+              text: "Loading your playlists…"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Item {
+              width: parent.width
+              height: pickerField.implicitHeight
+
+              TextField {
+                id: pickerField
+                anchors.fill: parent
+                placeholderText: "Filter playlists"
+                foreground: root.foreground
+                accent: root.accent
+                font.family: root.fontFamily
+                verticalPadding: Style.space(5)
+                onTextEdited: { root.pickerFilter = text; root.pickerIndex = 0 }
+                Keys.onEscapePressed: function(event) {
+                  if (text !== "") { text = ""; root.pickerFilter = ""; root.pickerIndex = 0 }
+                  else if (root.service) root.service.closePicker()
+                  event.accepted = true
+                }
+                Keys.onDownPressed: function(event) {
+                  root.pickerIndex = Math.min(root.pickerTargets.length - 1, root.pickerIndex + 1)
+                  event.accepted = true
+                }
+                Keys.onUpPressed: function(event) {
+                  root.pickerIndex = Math.max(0, root.pickerIndex - 1)
+                  event.accepted = true
+                }
+                Keys.onReturnPressed: function(event) {
+                  root.pickTarget(root.pickerIndex)
+                  event.accepted = true
+                }
+                Keys.onEnterPressed: function(event) {
+                  root.pickTarget(root.pickerIndex)
+                  event.accepted = true
+                }
+              }
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: root.pickerFilter !== "" && root.pickerTargets.length === 0
+              width: parent.width
+              text: "No playlist matches that."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            ListView {
+              id: pickerList
+              width: parent.width
+              height: Math.min(contentHeight, Style.space(264))
+              clip: true
+              interactive: contentHeight > height
+              currentIndex: root.pickerIndex
+              model: root.pickerTargets
+
+              delegate: Item {
+                id: pickerRow
+                required property var modelData
+                required property int index
+                readonly property bool current: index === root.pickerIndex
+                width: pickerList.width
+                height: Style.space(44)
+
+                Rectangle {
+                  anchors.fill: parent
+                  radius: Style.cornerRadius
+                  color: pickerRow.current ? Style.hoverFillFor(root.foreground, root.accent) : "transparent"
+                }
+
+                Row {
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(6)
+                  anchors.rightMargin: Style.space(6)
+                  spacing: Style.space(10)
+
+                  RoundedArt {
+                    id: pickerArt
+                    width: Style.space(32)
+                    height: Style.space(32)
+                    revealAt: root.service ? root.service.revealAtFor(pickerRow.modelData) : 0
+                    source: pickerRow.modelData.liked === true ? "" : (root.service ? root.service.coverSource(pickerRow.modelData) : Model.artSource(pickerRow.modelData))
+                    placeholder: pickerRow.modelData.liked === true ? Model.glyph.heart : Model.glyph.playlist
+                    cornerRadius: Style.cornerRadius > 0 ? Style.space(4) : 0
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  Column {
+                    width: parent.width - pickerArt.width - parent.spacing
+                    spacing: Style.space(1)
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Text {
+                      width: parent.width
+                      textFormat: Text.PlainText
+                      text: pickerRow.modelData.name
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      font.bold: pickerRow.current
+                      elide: Text.ElideRight
+                    }
+                    Text {
+                      width: parent.width
+                      textFormat: Text.PlainText
+                      text: Model.subtitle(pickerRow.modelData)
+                      visible: text !== ""
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      elide: Text.ElideRight
+                    }
+                  }
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onEntered: root.pickerIndex = pickerRow.index
+                  onClicked: { root.pickerIndex = pickerRow.index; root.pickTarget(pickerRow.index) }
+                }
               }
             }
           }
@@ -1335,7 +1644,8 @@ Panel {
                 id: detailArt
                 width: Style.space(52)
                 height: Style.space(52)
-                source: root.detailOpen ? Model.artSource(root.detail.item) : ""
+                revealAt: root.detailOpen && root.service ? root.service.revealAtFor(root.detail.item) : 0
+                source: root.detailOpen ? (root.service ? root.service.coverSource(root.detail.item) : Model.artSource(root.detail.item)) : ""
                 placeholder: root.detailOpen ? Model.typeGlyph(root.detail.item.type) : Model.glyph.note
                 anchors.verticalCenter: parent.verticalCenter
               }
@@ -1491,7 +1801,8 @@ Panel {
                       id: rowArt
                       width: Style.space(36)
                       height: Style.space(36)
-                      source: rowItem.isItem ? (rowItem.item.liked ? "" : Model.artSource(rowItem.item)) : ""
+                      revealAt: rowItem.isItem && root.service ? root.service.revealAtFor(rowItem.item) : 0
+                      source: rowItem.isItem ? (rowItem.item.liked ? "" : (root.service ? root.service.coverSource(rowItem.item) : Model.artSource(rowItem.item))) : ""
                       placeholder: rowItem.isItem ? (rowItem.item.liked ? Model.glyph.heart : Model.typeGlyph(rowItem.item.type)) : Model.glyph.note
                       cornerRadius: rowItem.isItem && rowItem.item.type === "artist" ? width / 2 : (Style.cornerRadius > 0 ? Style.space(4) : 0)
                       anchors.verticalCenter: parent.verticalCenter
@@ -1573,6 +1884,15 @@ Panel {
                       foreground: root.foreground
                       fontFamily: root.fontFamily
                       onClicked: if (root.service) root.service.queueAdd(rowItem.item)
+                    }
+                    PanelActionButton {
+                      visible: rowItem.isItem && (rowItem.item.type === "track" || rowItem.item.type === "episode")
+                      iconText: Model.glyph.playlistAdd
+                      tooltipText: root.service && root.service.pickerOpenFor(rowItem.item.uri) ? "Close (a)" : "Add to a playlist (a)"
+                      foreground: root.service && root.service.pickerOpenFor(rowItem.item.uri) ? root.accent : root.foreground
+                      hoverColor: root.accent
+                      fontFamily: root.fontFamily
+                      onClicked: { root.pickerIndex = 0; if (root.service) root.service.togglePicker(rowItem.item) }
                     }
                     PanelActionButton {
                       iconText: Model.glyph.play
