@@ -12,7 +12,7 @@ Any agent (Claude, Codex, others) follows this file. `CLAUDE.md` only points her
 2. **Never force-push, rewrite published history, or delete `stable`, `dev` or `upstream`.**
 3. **Never commit directly to `stable` or `upstream`.** Work on a branch off `dev`.
 4. **Never run `scripts/promote` yourself.** It needs the user's smoke test. Ask them to run it
-   (`! scripts/promote` in a Claude Code prompt, or in a terminal).
+   in a real terminal; the `!` prompt of agent CLIs has no tty and is refused.
 5. **Never edit `/usr/share/omarchy/`**, and never commit secrets: Spotify tokens, the Soloist API
    key, `~/.local/state/omarchy-spotify/auth.json`, or client credentials.
 6. Security-sensitive code (see "Security notes" in README.md: the API key, process
@@ -41,7 +41,7 @@ sh tests/run                      # must pass before landing
 scripts/land feat/add-to-playlist # tests, merge --no-ff into dev, push dev, clean up
 scripts/live dev                  # user: point the running bar at dev to smoke test it
 scripts/live stable               # back to stable
-scripts/promote                   # USER ONLY: tests + confirm, then stable = dev, pushed
+scripts/promote                   # USER ONLY, in a real terminal: tests + confirm, then stable = dev, pushed
 ```
 
 - **Always work in a worktree**, never in the live checkout. The live checkout is the user's
