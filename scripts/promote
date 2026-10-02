@@ -1,0 +1,18 @@
+#!/bin/sh
+# Usage: scripts/promote      (HUMAN ONLY - needs an interactive terminal)
+# Fast-forwards stable to dev after tests pass and the user confirms a manual smoke test.
+. "$(dirname "$0")/_lib.sh"
+[ -t 0 ] && [ -r /dev/tty ] || die "promote needs a human at a terminal. Agents: ask the user to run it (e.g. '! scripts/promote')."
+cd "$LIVE"
+[ -z "$(git status --porcelain)" ] || die "live plugin dir has uncommitted changes"
+git merge-base --is-ancestor stable dev || die "stable is not an ancestor of dev; fix history first (see AGENTS.md)"
+[ "$(git rev-parse stable)" != "$(git rev-parse dev)" ] || die "stable already equals dev"
+git log --oneline stable..dev
+sh "$DEV_WT/tests/run"
+printf "Smoke-tested dev live (panel opens, playback, search, the changed feature)? Type 'yes': "
+read -r answer < /dev/tty
+[ "$answer" = yes ] || die "not promoted"
+git switch stable
+git merge --ff-only dev
+ALLOW_STABLE_PUSH=1 git push origin stable
+echo "stable -> $(git rev-parse --short stable); live plugin is on stable."

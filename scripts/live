@@ -1,0 +1,13 @@
+#!/bin/sh
+# Usage: scripts/live dev|stable|status
+# Switches what the running bar plugin loads (it hot-reloads on checkout).
+. "$(dirname "$0")/_lib.sh"
+cd "$LIVE"
+case "${1:-status}" in
+  dev|stable)
+    [ -z "$(git status --porcelain)" ] || die "live plugin dir has uncommitted changes"
+    if [ "$1" = dev ]; then git switch --detach dev; else git switch stable; fi ;;
+  status) ;;
+  *) die "usage: scripts/live dev|stable|status" ;;
+esac
+echo "live plugin: $(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEAD)  (dev=$(git rev-parse --short dev) stable=$(git rev-parse --short stable))"

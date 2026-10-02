@@ -1,0 +1,9 @@
+#!/bin/sh
+# Direct commits are only allowed on dev and feature branches.
+# stable only moves by `scripts/promote`; upstream only by `scripts/sync-upstream`.
+branch=$(git symbolic-ref --short -q HEAD || true)
+case "$branch" in
+  stable|upstream)
+    echo "BLOCKED: no direct commits on '$branch'. Branch from dev (scripts/wt <feat/name>). See AGENTS.md." >&2
+    exit 1 ;;
+esac

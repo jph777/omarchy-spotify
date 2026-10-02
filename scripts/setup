@@ -1,0 +1,16 @@
+#!/bin/sh
+# One-time (idempotent) per clone: install the git hooks and the safety config.
+. "$(dirname "$0")/_lib.sh"
+SRC=$(git rev-parse --show-toplevel)   # the checkout this script ran from (has .githooks)
+cd "$LIVE"
+for h in pre-commit pre-merge-commit pre-push; do
+  cp "$SRC/.githooks/$h" "$COMMON/hooks/$h"
+  chmod +x "$COMMON/hooks/$h"
+done
+git remote get-url upstream >/dev/null 2>&1 && git remote set-url --push upstream DISABLED_NEVER_PUSH_TO_UPSTREAM
+git config branch.upstream.remote upstream
+git config branch.upstream.merge refs/heads/main
+git config branch.upstream.pushRemote origin
+mkdir -p "$WT_ROOT"
+[ -d "$DEV_WT" ] || git worktree add "$DEV_WT" dev
+echo "ok: hooks installed, upstream push disabled, dev worktree at $DEV_WT"

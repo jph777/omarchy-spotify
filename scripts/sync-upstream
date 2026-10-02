@@ -1,0 +1,15 @@
+#!/bin/sh
+# Usage: scripts/sync-upstream
+# Mirrors ninepointlabs main into the 'upstream' branch (fast-forward only), pushes it to
+# OUR origin, then merges it into dev. Resolve conflicts in the dev worktree, then test.
+# Never promotes. Read-only toward the original repo.
+. "$(dirname "$0")/_lib.sh"
+cd "$LIVE"
+git fetch upstream
+git fetch upstream refs/heads/main:refs/heads/upstream   # fast-forward only; fails if upstream was touched
+git push origin refs/heads/upstream:refs/heads/upstream
+[ -z "$(git -C "$DEV_WT" status --porcelain)" ] || die "dev worktree is dirty"
+git -C "$DEV_WT" merge --no-ff -m "Merge upstream into dev" refs/heads/upstream || {
+  echo "CONFLICTS: resolve in $DEV_WT, commit, run tests/run, then scripts/land is NOT needed (you are on dev)." >&2; exit 1; }
+sh "$DEV_WT/tests/run"
+git -C "$DEV_WT" push origin dev

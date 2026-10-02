@@ -1,0 +1,8 @@
+#!/bin/sh
+# Merge commits are only allowed on dev (fast-forwards skip this hook).
+branch=$(git symbolic-ref --short -q HEAD || true)
+case "$branch" in
+  stable|upstream)
+    echo "BLOCKED: no merge commits on '$branch'. See AGENTS.md." >&2
+    exit 1 ;;
+esac

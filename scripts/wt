@@ -1,0 +1,7 @@
+#!/bin/sh
+# Usage: scripts/wt feat/add-to-playlist   -> new branch off dev in its own worktree.
+. "$(dirname "$0")/_lib.sh"
+[ $# -eq 1 ] || die "usage: scripts/wt <feat/name|fix/name|...>"
+dir=$WT_ROOT/$(echo "$1" | tr / -)
+git -C "$LIVE" worktree add -b "$1" "$dir" dev
+echo "$dir"
