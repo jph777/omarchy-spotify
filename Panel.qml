@@ -53,6 +53,11 @@ Panel {
   // Highlighted target while the add-to-playlist picker is open.
   property int pickerIndex: 0
   readonly property bool pickerOpen: service ? service.pickerOpen : false
+  // The Playlists tab's filter box. It resets when the panel closes, so a stale
+  // filter never hides playlists the next time it opens.
+  property string playlistFilter: ""
+  onPlaylistFilterChanged: cursorIndex = Model.firstItemIndex(rows, 0, 1)
+
   property string pickerFilter: ""
   readonly property var pickerTargets: service ? Model.filterByName(service.addTargets, pickerFilter) : []
 
@@ -91,7 +96,7 @@ Panel {
     if (!service || !authenticated) return []
     if (detailOpen) return Model.detailRows(detail)
     if (currentTab === "search") return Model.searchRows(service.searchResults, service.recent, searchText, service.searching, service.searchError)
-    if (currentTab === "playlists") return Model.libraryRows(service.playlists, service.playlistsLoading, service.playlistsError, "No playlists yet — make one in Spotify and it shows up here.")
+    if (currentTab === "playlists") return Model.playlistRows(service.playlists, playlistFilter, service.playlistsLoading, service.playlistsError)
     if (currentTab === "books") return Model.libraryRows(service.audiobooks, service.audiobooksLoading, service.audiobooksError, "No audiobooks saved. Search for one and save it in Spotify to see it here.")
     if (currentTab === "podcasts") return Model.libraryRows(service.shows, service.showsLoading, service.showsError, "No podcasts followed. Search for a show and follow it in Spotify.")
     return []
@@ -248,6 +253,16 @@ Panel {
     return false
   }
 
+  // `/`: the Playlists tab has its own filter box; everywhere else it is Spotify search.
+  function focusFilterOrSearch() {
+    if (currentTab === "playlists" && !detailOpen) {
+      playlistField.forceActiveFocus()
+      playlistField.selectAll()
+    } else {
+      focusSearch()
+    }
+  }
+
   function focusSearch() {
     if (currentTab !== "search") setTab("search")
     searchField.forceActiveFocus()
@@ -303,6 +318,8 @@ Panel {
     noteOpen(opened)
     if (!opened) {
       deviceMenuOpen = false
+      playlistFilter = ""
+      playlistField.text = ""
       if (service) service.closeDetail()
       return
     }
@@ -516,7 +533,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: searchField.activeFocus || clientIdField.activeFocus || pickerField.activeFocus
+      blocked: searchField.activeFocus || clientIdField.activeFocus || pickerField.activeFocus || playlistField.activeFocus
       onMoveRequested: function(dx, dy) {
         if (root.pickerOpen) {
           if (dy !== 0) root.pickerIndex = Math.max(0, Math.min(root.pickerTargets.length - 1, root.pickerIndex + dy))
@@ -540,12 +557,13 @@ Panel {
         if (root.deviceMenuOpen) { root.deviceMenuOpen = false; return }
         if (root.goBack()) return
         if (root.currentTab === "search" && root.searchText !== "") { root.searchText = ""; return }
+        if (root.currentTab === "playlists" && root.playlistFilter !== "") { root.playlistFilter = ""; playlistField.text = ""; return }
         root.close()
       }
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
         if (!root.service) return
-        if (t === "/") root.focusSearch()
+        if (t === "/") root.focusFilterOrSearch()
         else if (t === "1") root.setTab("search")
         else if (t === "2") root.setTab("playlists")
         else if (t === "3") root.setTab("books")
@@ -1566,6 +1584,54 @@ Panel {
                 verticalPadding: Style.space(3)
                 onClicked: root.setTab(modelData.key)
               }
+            }
+          }
+
+          // ---------------------------------------- playlists filter field --
+          Item {
+            visible: root.authenticated && !root.detailOpen && root.currentTab === "playlists"
+            width: parent.width
+            height: playlistField.implicitHeight
+
+            TextField {
+              id: playlistField
+              anchors.fill: parent
+              placeholderText: "Filter playlists   ·   press /"
+              foreground: root.foreground
+              accent: root.accent
+              font.family: root.fontFamily
+              verticalPadding: Style.space(5)
+              rightPadding: Style.space(28)
+              onTextEdited: root.playlistFilter = text
+              Keys.onEscapePressed: function(event) {
+                if (text !== "") { text = ""; root.playlistFilter = "" }
+                keyCatcher.forceActiveFocus()
+                event.accepted = true
+              }
+              Keys.onDownPressed: function(event) {
+                keyCatcher.forceActiveFocus()
+                root.cursorIndex = Model.firstItemIndex(root.rows, 0, 1)
+                event.accepted = true
+              }
+              Keys.onReturnPressed: function(event) {
+                keyCatcher.forceActiveFocus()
+                root.cursorIndex = Model.firstItemIndex(root.rows, 0, 1)
+                event.accepted = true
+              }
+            }
+
+            PanelActionButton {
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(4)
+              anchors.verticalCenter: parent.verticalCenter
+              visible: root.playlistFilter !== ""
+              iconText: Model.glyph.close
+              tooltipText: "Clear"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              size: Style.space(20)
+              fontSize: Style.font.bodySmall
+              onClicked: { root.playlistFilter = ""; playlistField.text = ""; keyCatcher.forceActiveFocus() }
             }
           }
 

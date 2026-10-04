@@ -24,8 +24,10 @@ even play music with no Spotify window open at all.
 - **Search:** type once and get tracks, artists, albums, playlists, podcasts,
   episodes and audiobooks, grouped. With nothing typed you see what you
   played recently.
-- **Playlists:** Liked Songs plus everything you made or follow. Open one to
-  see its tracks, play from any row, or shuffle the whole thing. Add any track
+- **Playlists:** Liked Songs plus everything you made or follow. Type in the
+  filter box at the top (or press `/`) to narrow the list by name; every word
+  must match, and it clears when the panel closes. Open one to see its tracks,
+  play from any row, or shuffle the whole thing. Add any track
   or episode to a playlist you own or collaborate on (or to Liked Songs). The
   list appears at once and each new cover comes in with a quick diagonal wipe
   (covers you already have appear instantly); the Playlists tab and the
@@ -244,7 +246,7 @@ is on a command line, without printing the key itself.
 | `+` / `-` | volume up / down |
 | `q` | queue the highlighted row |
 | `a` | open the add-to-playlist list for the highlighted track (or what's playing); type to filter, `↑`/`↓` to choose, `Enter` to add, `Esc` to clear or close |
-| `/` | jump to the search box (`Esc` leaves it, `↓` jumps to results) |
+| `/` | jump to the search box, or to the filter box on the Playlists tab (`Esc` clears it, then leaves it; `↓` or `Enter` jumps to the results) |
 | `1` `2` `3` `4` or `h` / `l` | switch tabs |
 | `h` or `Esc` | go back out of a playlist, book or podcast |
 | `d` | devices |

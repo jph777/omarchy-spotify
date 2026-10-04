@@ -321,6 +321,17 @@ function libraryRows(items, loading, error, emptyText) {
   return rows
 }
 
+// The Playlists tab: every playlist whose name matches the filter, or a note when
+// the filter hides them all. "Loading…" only shows while there is nothing to filter.
+function playlistRows(items, filter, loading, error) {
+  var haveAny = !!(items && items.length > 0)
+  var narrowed = String(filter || "").replace(/\s+/g, "") !== ""
+  var empty = narrowed && haveAny
+    ? "No playlist matches that."
+    : "No playlists yet — make one in Spotify and it shows up here."
+  return libraryRows(filterByName(items || [], filter), loading && !haveAny, error, empty)
+}
+
 function detailRows(detail) {
   var rows = []
   if (!detail) return rows

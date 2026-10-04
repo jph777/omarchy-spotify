@@ -175,3 +175,25 @@ test("revealProgress is 0 before the start, 1 after, and 1 when there is no reve
   assert.equal(Model.revealProgress(1450, 1000, 450), 1)
   assert.equal(Model.revealProgress(5000, 1000, 450), 1)
 })
+
+test("playlistRows filters by name and explains an empty result", () => {
+  const items = [{ type: "playlist", name: "Liked Songs", liked: true }, { type: "playlist", name: "Road Trip" }, { type: "playlist", name: "Focus" }]
+  const names = (rows) => plain(rows).filter((row) => row.kind === "item").map((row) => row.item.name)
+  assert.deepEqual(names(Model.playlistRows(items, "", false, "")), ["Liked Songs", "Road Trip", "Focus"])
+  assert.deepEqual(names(Model.playlistRows(items, "  ", false, "")), ["Liked Songs", "Road Trip", "Focus"])
+  assert.deepEqual(names(Model.playlistRows(items, "trip", false, "")), ["Road Trip"])
+  assert.deepEqual(names(Model.playlistRows(items, "SONGS liked", false, "")), ["Liked Songs"])
+  const none = plain(Model.playlistRows(items, "zzz", false, ""))
+  assert.equal(none.length, 1)
+  assert.equal(none[0].kind, "note")
+  assert.match(none[0].text, /No playlist matches/)
+  // While the list is still loading with nothing in it, say so, whatever the filter is.
+  const loading = plain(Model.playlistRows([], "road", true, ""))
+  assert.equal(loading[0].text, "Loading…")
+  // Nothing to filter and nothing loading: the usual empty message, not "no match".
+  assert.match(plain(Model.playlistRows([], "road", false, ""))[0].text, /No playlists yet/)
+  // A reload with the list already present keeps showing (and filtering) it.
+  assert.deepEqual(names(Model.playlistRows(items, "focus", true, "")), ["Focus"])
+  // An error row stays on top of the list.
+  assert.equal(plain(Model.playlistRows(items, "", false, "boom"))[0].text, "boom")
+})
