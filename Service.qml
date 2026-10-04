@@ -153,9 +153,10 @@ Item {
   property string showsError: ""
   property double showsLoadedAt: 0
 
-  property var recent: []
-  property bool recentLoading: false
-  property double recentLoadedAt: 0
+  // What is coming up after the current track (the Search tab's empty state).
+  property var queue: []
+  property bool queueLoading: false
+  property double queueLoadedAt: 0
 
   // ---- Detail page (playlist tracks, album tracks, show episodes, book chapters)
   property var detail: null
@@ -415,7 +416,7 @@ Item {
       root.lastPlayed = d.lastPlayed || {}
       if (root.authenticated) {
         root.refreshPlayer()
-        root.refreshRecentIfStale()
+        root.refreshQueueIfStale(15000)
       }
     })
   }
@@ -424,7 +425,7 @@ Item {
     if (!probed) { refresh(); return }
     if (authenticated) {
       refreshPlayer()
-      refreshRecentIfStale()
+      refreshQueueIfStale(15000)
     } else {
       refresh()
     }
@@ -454,7 +455,7 @@ Item {
       root.playlistsLoadedAt = 0
       root.audiobooksLoadedAt = 0
       root.showsLoadedAt = 0
-      root.recentLoadedAt = 0
+      root.queueLoadedAt = 0
       root.refresh()
     })
     return authProcess !== null
@@ -476,14 +477,14 @@ Item {
       root.coverFiles = ({})
       root.audiobooks = []
       root.shows = []
-      root.recent = []
+      root.queue = []
       root.searchResults = null
       root.detail = null
       root.savedByUri = ({})
       root.playlistsLoadedAt = 0
       root.audiobooksLoadedAt = 0
       root.showsLoadedAt = 0
-      root.recentLoadedAt = 0
+      root.queueLoadedAt = 0
       root.refresh()
     })
   }
@@ -516,6 +517,12 @@ Item {
       lastPlayed = { uri: nowItem.uri, name: nowItem.name, subtitle: nowItem.artists || nowItem.show || nowItem.book || "", art: nowItem.art, artPath: nowItem.artPath }
     }
     if (nowUri !== "" && nowUri !== previousUri) checkSaved(nowUri)
+    // Keep the queue current while a panel is showing it: right away when the track
+    // changes, otherwise every so often (it can change from other devices too).
+    if (authenticated && panelOpen) {
+      if (nowUri !== previousUri) loadQueue()
+      else refreshQueueIfStale(15000)
+    }
   }
 
   // Interpolate the progress bar between polls so it moves every second.
@@ -692,7 +699,7 @@ Item {
 
   function queueAdd(item) {
     if (!item || !item.uri) return
-    action(["queue-add", item.uri], null, "Queued " + (item.name || ""))
+    action(["queue-add", item.uri], function() { queueRefreshTimer.restart() }, "Queued " + (item.name || ""))
   }
 
   // ------------------------------------------------- add to a playlist --
@@ -988,27 +995,35 @@ Item {
     })
   }
 
-  function refreshRecentIfStale() {
-    if (recentLoadedAt > 0 && Date.now() - recentLoadedAt < 120000) return
-    loadRecent()
+  function refreshQueueIfStale(maxAgeMs) {
+    if (queueLoadedAt > 0 && Date.now() - queueLoadedAt < maxAgeMs) return
+    loadQueue()
   }
 
-  function loadRecent() {
-    if (!authenticated || recentLoading) return
-    recentLoading = true
-    call(["recent", "--limit", "12"], function(result) {
-      root.recentLoading = false
+  function loadQueue() {
+    if (!authenticated || queueLoading) return
+    queueLoading = true
+    call(["queue"], function(result) {
+      root.queueLoading = false
       if (!result.ok) { root.absorbAuthError(result); return }
-      root.recent = result.data || []
-      root.recentLoadedAt = Date.now()
+      root.queue = result.data || []
+      root.queueLoadedAt = Date.now()
     })
+  }
+
+  // Spotify takes a moment to show a track that was just queued.
+  Timer {
+    id: queueRefreshTimer
+    interval: 600
+    repeat: false
+    onTriggered: root.loadQueue()
   }
 
   function loadTab(tab, force) {
     if (tab === "playlists") loadPlaylists(force)
     else if (tab === "books") loadAudiobooks(force)
     else if (tab === "podcasts") loadShows(force)
-    else if (tab === "search") { if (force) loadRecent(); else refreshRecentIfStale() }
+    else if (tab === "search") { if (force) loadQueue(); else refreshQueueIfStale(10000) }
   }
 
   // ------------------------------------------------------------- detail --

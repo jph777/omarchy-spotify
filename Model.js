@@ -277,15 +277,16 @@ function itemRow(item, extra) {
   return row
 }
 
-function searchRows(results, recent, query, searching, error) {
+// With nothing typed, the Search tab shows what is coming up in the queue.
+function searchRows(results, queue, query, searching, error) {
   var rows = []
   if (error) rows.push(noteRow(error, false))
   if (query.trim() === "") {
-    if (recent && recent.length > 0) {
-      rows.push(headerRow("RECENTLY PLAYED"))
-      for (var i = 0; i < recent.length; i++) rows.push(itemRow(recent[i]))
+    if (queue && queue.length > 0) {
+      rows.push(headerRow("UP NEXT"))
+      for (var i = 0; i < queue.length; i++) rows.push(itemRow(queue[i], { inQueue: true }))
     } else if (!searching) {
-      rows.push(noteRow("Type to search tracks, artists, albums, playlists, podcasts, episodes and audiobooks."))
+      rows.push(noteRow("Nothing is queued. Type to search tracks, artists, albums, playlists, podcasts, episodes and audiobooks."))
     }
     return rows
   }

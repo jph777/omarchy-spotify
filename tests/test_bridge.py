@@ -803,5 +803,47 @@ class PlaylistCoverTests(TempHome):
         self.assertEqual(set(data["paths"].values()), {""})
 
 
+class QueueCommandTests(TempHome):
+    """The queue command feeds the Search tab's Up next list."""
+
+    def raw_track(self, n):
+        return {"type": "track", "id": "t%d" % n, "uri": "spotify:track:t%d" % n, "name": "Song %d" % n,
+                "artists": [{"name": "Artist"}], "album": {"name": "Album", "images": []}, "duration_ms": 1000}
+
+    def run_queue(self, payload):
+        args = bridge.build_parser().parse_args(["queue"])
+        buf = io.StringIO()
+        with mock.patch.object(bridge, "api", return_value=payload) as api, \
+             mock.patch.object(bridge, "cache_art", side_effect=lambda items: items), \
+             mock.patch.object(sys, "stdout", buf):
+            args.fn(args)
+        api.assert_called_once()
+        self.assertEqual(api.call_args.args[:2], ("GET", "/me/player/queue"))
+        return json.loads(buf.getvalue())["data"]
+
+    def test_returns_the_upcoming_items_in_order_capped_at_twenty(self):
+        data = self.run_queue({"currently_playing": self.raw_track(0), "queue": [self.raw_track(n) for n in range(1, 31)]})
+        self.assertEqual(len(data), 20)
+        self.assertEqual(data[0]["uri"], "spotify:track:t1")
+        self.assertEqual(data[-1]["uri"], "spotify:track:t20")
+        self.assertNotIn("spotify:track:t0", [item["uri"] for item in data])
+
+    def test_an_empty_or_missing_queue_is_an_empty_list(self):
+        self.assertEqual(self.run_queue({"queue": []}), [])
+        self.assertEqual(self.run_queue({}), [])
+        self.assertEqual(self.run_queue(None), [])
+
+    def test_the_login_no_longer_asks_for_recently_played(self):
+        self.assertNotIn("user-read-recently-played", bridge.SCOPES)
+        # The queue endpoint needs these two, which the login still asks for.
+        self.assertIn("user-read-playback-state", bridge.SCOPES)
+        self.assertIn("user-read-currently-playing", bridge.SCOPES)
+
+    def test_recently_played_is_gone(self):
+        with self.assertRaises(SystemExit):
+            with mock.patch.object(sys, "stderr", io.StringIO()):
+                bridge.build_parser().parse_args(["recent"])
+
+
 if __name__ == "__main__":
     unittest.main()

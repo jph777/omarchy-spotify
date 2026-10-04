@@ -95,7 +95,7 @@ Panel {
   function computeRows() {
     if (!service || !authenticated) return []
     if (detailOpen) return Model.detailRows(detail)
-    if (currentTab === "search") return Model.searchRows(service.searchResults, service.recent, searchText, service.searching, service.searchError)
+    if (currentTab === "search") return Model.searchRows(service.searchResults, service.queue, searchText, service.searching, service.searchError)
     if (currentTab === "playlists") return Model.playlistRows(service.playlists, playlistFilter, service.playlistsLoading, service.playlistsError)
     if (currentTab === "books") return Model.libraryRows(service.audiobooks, service.audiobooksLoading, service.audiobooksError, "No audiobooks saved. Search for one and save it in Spotify to see it here.")
     if (currentTab === "podcasts") return Model.libraryRows(service.shows, service.showsLoading, service.showsError, "No podcasts followed. Search for a show and follow it in Spotify.")
@@ -223,7 +223,7 @@ Panel {
   }
 
   function queueRow(index) {
-    if (index < 0 || index >= rows.length || rows[index].kind !== "item" || !service) return
+    if (index < 0 || index >= rows.length || rows[index].kind !== "item" || rows[index].inQueue === true || !service) return
     var item = rows[index].item
     if (item.type === "track" || item.type === "episode" || item.type === "chapter") service.queueAdd(item)
   }
@@ -1811,7 +1811,8 @@ Panel {
                 readonly property var item: isItem ? modelData.item : null
                 readonly property bool hasCursor: isItem && root.cursorIndex === index
                 readonly property bool isNow: isItem && item.uri !== "" && item.uri === root.nowUri
-                readonly property bool queueable: isItem && (item.type === "track" || item.type === "episode" || item.type === "chapter")
+                // Already-queued rows (Up next) have nothing to add to the queue.
+                readonly property bool queueable: isItem && modelData.inQueue !== true && (item.type === "track" || item.type === "episode" || item.type === "chapter")
                 readonly property real progress: isItem ? Model.progressFraction(item) : 0
 
                 width: listColumn.width
@@ -1954,8 +1955,8 @@ Panel {
                     PanelActionButton {
                       visible: rowItem.isItem && (rowItem.item.type === "track" || rowItem.item.type === "episode")
                       iconText: Model.glyph.playlistAdd
-                      tooltipText: root.service && root.service.pickerOpenFor(rowItem.item.uri) ? "Close (a)" : "Add to a playlist (a)"
-                      foreground: root.service && root.service.pickerOpenFor(rowItem.item.uri) ? root.accent : root.foreground
+                      tooltipText: rowItem.isItem && root.service && root.service.pickerOpenFor(rowItem.item.uri) ? "Close (a)" : "Add to a playlist (a)"
+                      foreground: rowItem.isItem && root.service && root.service.pickerOpenFor(rowItem.item.uri) ? root.accent : root.foreground
                       hoverColor: root.accent
                       fontFamily: root.fontFamily
                       onClicked: { root.pickerIndex = 0; if (root.service) root.service.togglePicker(rowItem.item) }

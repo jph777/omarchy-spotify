@@ -22,8 +22,9 @@ even play music with no Spotify window open at all.
   drag, shuffle / previous / play / next / repeat, a volume slider, and a
   heart that saves the track to your library.
 - **Search:** type once and get tracks, artists, albums, playlists, podcasts,
-  episodes and audiobooks, grouped. With nothing typed you see what you
-  played recently.
+  episodes and audiobooks, grouped. With nothing typed you see what's up
+  next in your queue; it stays current as tracks change and when you queue
+  something (`q`, right-click, or the **+** button).
 - **Playlists:** Liked Songs plus everything you made or follow. Type in the
   filter box at the top (or press `/`) to narrow the list by name; every word
   must match, and it clears when the panel closes. Open one to see its tracks,

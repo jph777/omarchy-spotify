@@ -197,3 +197,23 @@ test("playlistRows filters by name and explains an empty result", () => {
   // An error row stays on top of the list.
   assert.equal(plain(Model.playlistRows(items, "", false, "boom"))[0].text, "boom")
 })
+
+test("searchRows shows the queue as Up next when nothing is typed, and search results otherwise", () => {
+  const queue = [{ type: "track", uri: "spotify:track:a", name: "A" }, { type: "track", uri: "spotify:track:b", name: "B" }]
+  const rows = plain(Model.searchRows(null, queue, "  ", false, ""))
+  assert.equal(rows[0].kind, "header")
+  assert.equal(rows[0].label, "UP NEXT")
+  assert.deepEqual(rows.slice(1).map((row) => row.item.name), ["A", "B"])
+  assert.ok(rows.slice(1).every((row) => row.kind === "item" && row.inQueue === true))
+  // An empty queue explains itself and keeps the search hint; it never invents a header.
+  const empty = plain(Model.searchRows(null, [], "", false, ""))
+  assert.equal(empty.length, 1)
+  assert.match(empty[0].text, /Nothing is queued/)
+  assert.equal(plain(Model.searchRows(null, null, "", true, "")).length, 0)
+  // An error row stays first, ahead of the queue.
+  assert.equal(plain(Model.searchRows(null, queue, "", false, "boom"))[0].text, "boom")
+  // Typing switches to search and the queue rows are not mixed in.
+  const searching = plain(Model.searchRows(null, queue, "abc", true, ""))
+  assert.equal(searching.length, 1)
+  assert.equal(searching[0].text, "Searching…")
+})
