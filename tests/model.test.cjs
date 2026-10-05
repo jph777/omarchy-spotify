@@ -218,6 +218,31 @@ test("searchRows shows the queue as Up next when nothing is typed, and search re
   assert.equal(searching[0].text, "Searching…")
 })
 
+test("membership says whether an item is already in a playlist, and when it cannot tell yet", () => {
+  const uri = "spotify:track:a"
+  const playlist = { id: "p1", snapshotId: "s1" }
+  const entry = (extra) => Object.assign({ snapshot: "s1", complete: true, failed: false, uris: { [uri]: true } }, extra)
+  assert.equal(Model.membership(playlist, uri, { p1: entry() }, {}), "has")
+  assert.equal(Model.membership(playlist, uri, { p1: entry({ uris: { "spotify:track:b": true } }) }, {}), "no")
+  // Not read yet, or read for a different snapshot of the playlist: still checking.
+  assert.equal(Model.membership(playlist, uri, {}, {}), "checking")
+  assert.equal(Model.membership(playlist, uri, null, null), "checking")
+  assert.equal(Model.membership(playlist, uri, { p1: entry({ snapshot: "old" }) }, {}), "checking")
+  // Too long to read in full: a hit still counts, a miss is only "unsure".
+  assert.equal(Model.membership(playlist, uri, { p1: entry({ complete: false }) }, {}), "has")
+  assert.equal(Model.membership(playlist, uri, { p1: entry({ complete: false, uris: {} }) }, {}), "unsure")
+  // A failed read never blocks adding.
+  assert.equal(Model.membership(playlist, uri, { p1: entry({ failed: true, uris: {} }) }, {}), "unsure")
+  // Liked Songs uses the saved map instead.
+  const liked = { id: "__liked__", liked: true }
+  assert.equal(Model.membership(liked, uri, {}, { [uri]: true }), "has")
+  assert.equal(Model.membership(liked, uri, {}, { [uri]: false }), "no")
+  assert.equal(Model.membership(liked, uri, {}, {}), "checking")
+  // Nothing to check.
+  assert.equal(Model.membership(playlist, "", { p1: entry() }, {}), "no")
+  assert.equal(Model.membership(null, uri, {}, {}), "no")
+})
+
 test("marquee only scrolls text that overflows, at a steady speed", () => {
   assert.deepEqual(plain(Model.marquee(100, 200, 32, 40)), { scrolls: false, distance: 0, durationMs: 0 })
   // Fits exactly, or within a pixel of it: no scrolling.

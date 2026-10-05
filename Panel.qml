@@ -1330,6 +1330,9 @@ Panel {
                 required property var modelData
                 required property int index
                 readonly property bool current: index === root.pickerIndex
+                // "has": this track is already in the playlist, so the row is greyed out.
+                readonly property string membership: root.service ? root.service.membershipFor(modelData) : "no"
+                readonly property bool already: membership === "has"
                 width: pickerList.width
                 height: Style.space(44)
 
@@ -1354,6 +1357,7 @@ Panel {
                     placeholder: pickerRow.modelData.liked === true ? Model.glyph.heart : Model.glyph.playlist
                     cornerRadius: Style.cornerRadius > 0 ? Style.space(4) : 0
                     anchors.verticalCenter: parent.verticalCenter
+                    opacity: pickerRow.already ? 0.35 : 1
                   }
 
                   Column {
@@ -1365,18 +1369,20 @@ Panel {
                       width: parent.width
                       textFormat: Text.PlainText
                       text: pickerRow.modelData.name
-                      color: root.foreground
+                      color: pickerRow.already ? root.faint : root.foreground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
-                      font.bold: pickerRow.current
+                      font.bold: pickerRow.current && !pickerRow.already
                       elide: Text.ElideRight
                     }
                     Text {
                       width: parent.width
                       textFormat: Text.PlainText
-                      text: Model.subtitle(pickerRow.modelData)
+                      text: pickerRow.already
+                        ? Model.glyph.check + "  Already " + (pickerRow.modelData.liked === true ? "in your Liked Songs" : "in this playlist")
+                        : (pickerRow.membership === "checking" ? "Checking…" : Model.subtitle(pickerRow.modelData))
                       visible: text !== ""
-                      color: root.dim
+                      color: pickerRow.already ? root.accent : root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                       elide: Text.ElideRight

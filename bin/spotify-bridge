@@ -1048,6 +1048,8 @@ def norm_playlist(p, art_size=64):
         "name": p.get("name", ""),
         "owner": owner.get("display_name") or owner.get("id", ""),
         "ownerId": owner.get("id", ""),
+        # Changes whenever the playlist's contents do, so cached track lists can be checked.
+        "snapshotId": p.get("snapshot_id", ""),
         "count": int(counter.get("total") or 0),
         "description": short(p.get("description")),
         "collaborative": bool(p.get("collaborative")),
@@ -1986,6 +1988,23 @@ def cmd_playlist_add(args):
     out({"added": uris, "playlist": playlist})
 
 
+def cmd_playlist_uris(args):
+    """Every URI in a playlist (up to --max items), for "is it already in there?".
+    `complete` is false when the playlist is longer than what was read."""
+    playlist = safe_id(args.id)
+    raw, total = paged("/playlists/%s/items" % playlist,
+                       {"limit": 100, "additional_types": "track,episode",
+                        "fields": "items(item(uri),track(uri)),next,total"}, int(args.max))
+    uris = []
+    for entry in raw:
+        inner = (entry.get("item") or entry.get("track")) if isinstance(entry, dict) else None
+        uri = inner.get("uri") if isinstance(inner, dict) else ""
+        if uri:
+            uris.append(str(uri))
+    complete = total is not None and len(raw) >= int(total)
+    out({"uris": uris, "total": int(total or len(raw)), "complete": bool(complete)})
+
+
 def cmd_liked(args):
     raw, total = paged("/me/tracks", {"limit": 50}, int(args.limit))
     items = [n for n in (norm_track(e.get("track") if isinstance(e, dict) else None) for e in raw) if n and n.get("uri")]
@@ -2135,6 +2154,7 @@ def build_parser():
     p = sub.add_parser("art"); p.add_argument("urls", nargs="+"); p.set_defaults(fn=cmd_art)
     p = sub.add_parser("playlist-items"); p.add_argument("id"); p.add_argument("--limit", type=int, default=300); p.set_defaults(fn=cmd_playlist_items)
     p = sub.add_parser("playlist-add"); p.add_argument("id"); p.add_argument("uris", nargs="+"); p.set_defaults(fn=cmd_playlist_add)
+    p = sub.add_parser("playlist-uris"); p.add_argument("id"); p.add_argument("--max", type=int, default=3000); p.set_defaults(fn=cmd_playlist_uris)
     p = sub.add_parser("liked"); p.add_argument("--limit", type=int, default=100); p.set_defaults(fn=cmd_liked)
     p = sub.add_parser("audiobooks"); p.add_argument("--limit", type=int, default=200); p.set_defaults(fn=cmd_audiobooks)
     p = sub.add_parser("audiobook-chapters"); p.add_argument("id"); p.add_argument("--limit", type=int, default=300); p.set_defaults(fn=cmd_audiobook_chapters)

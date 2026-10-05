@@ -284,6 +284,15 @@ Add a track or episode to a playlist without leaving the bar:
 - The button is a toggle: it turns the accent color while the list is open, and
   clicking it again closes the list.
 
+A playlist that already has the track is greyed out and says **Already in this
+playlist** (Liked Songs says **Already in your Liked Songs**), and picking it
+only tells you so; nothing is added twice. Spotify can't say which playlists
+hold a track, so the first time you open the list the plugin reads your
+playlists in the background, three at a time (a few seconds, shown as
+"Checking…"), and remembers what it found per playlist. After that it re-reads
+only a playlist that has changed. Playlists longer than 3,000 items are read in
+part, so they only grey out when the track is in the part it read.
+
 The list shows each playlist's cover, owner and size, like the Playlists tab. It holds
 **Liked Songs**, every playlist you own, and collaborative playlists. Playlists
 other people made can't be edited, so they aren't offered.

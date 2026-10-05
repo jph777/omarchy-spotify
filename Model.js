@@ -109,6 +109,27 @@ function artSource(item) {
   return item.art || ""
 }
 
+// Is `uri` already in this add-to-playlist target?
+//   "has"      yes: it is in the playlist (or saved, for Liked Songs)
+//   "no"       no
+//   "checking" not known yet (the playlist has not been read, or has changed since)
+//   "unsure"   the playlist could not be read in full or at all, and the item was not
+//              in the part we saw, so it is treated as addable
+// `cache` maps playlist id -> { snapshot, complete, failed, uris: { uri: true } };
+// `savedByUri` maps uri -> saved to Liked Songs?
+function membership(target, uri, cache, savedByUri) {
+  if (!target || !uri) return "no"
+  if (target.liked === true) {
+    var saved = savedByUri ? savedByUri[uri] : undefined
+    return saved === true ? "has" : (saved === false ? "no" : "checking")
+  }
+  var entry = cache ? cache[target.id] : undefined
+  if (!entry || (target.snapshotId && entry.snapshot !== target.snapshotId)) return "checking"
+  if (entry.failed) return "unsure"
+  if (entry.uris && entry.uris[uri] === true) return "has"
+  return entry.complete ? "no" : "unsure"
+}
+
 // Marquee maths for text that is wider than its box. It scrolls the text left by
 // its own width plus a gap (a second copy then fills the box), at a steady speed.
 function marquee(textWidth, viewWidth, gap, pxPerSecond) {

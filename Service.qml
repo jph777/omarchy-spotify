@@ -473,6 +473,11 @@ Item {
       root.pickerItem = null
       root.player = ({ active: false })
       root.playlists = []
+      root._scanEpoch++
+      root._scanQueue = []
+      root._scanning = ({})
+      root._scanActive = 0
+      root.playlistUris = ({})
       root.coverRevealAt = ({})
       root.coverFiles = ({})
       root.audiobooks = []
@@ -723,7 +728,77 @@ Item {
     if (!authenticated || !item || !item.uri) return
     if (item.type !== "track" && item.type !== "episode") return
     pickerItem = item
-    loadPlaylists(false)
+    // A fresher list means fresher snapshot ids, so a playlist changed elsewhere gets re-read.
+    loadPlaylists(playlistsLoadedAt > 0 && Date.now() - playlistsLoadedAt > 60000)
+    checkSaved(item.uri)
+    scanPlaylists()
+  }
+
+  // ---- Is the picker's item already in each playlist?
+  // Spotify cannot say which playlists hold a track, so the playlists are read
+  // in the background (a few at a time) and remembered per playlist, keyed by
+  // the playlist's snapshot id: a playlist is read again only when it changes.
+  property var playlistUris: ({})   // playlist id -> { snapshot, at, complete, failed, uris }
+  property var _scanQueue: []
+  property var _scanning: ({})
+  property int _scanActive: 0
+  property int _scanEpoch: 0
+  readonly property int scanWorkers: 3
+
+  function membershipFor(target) {
+    return Model.membership(target, pickerItem ? pickerItem.uri : "", playlistUris, savedByUri)
+  }
+
+  function scanPlaylists() {
+    var queued = {}
+    for (var i = 0; i < _scanQueue.length; i++) queued[_scanQueue[i].id] = true
+    var next = _scanQueue.slice()
+    var targets = addTargets
+    var now = Date.now()
+    for (var j = 0; j < targets.length; j++) {
+      var t = targets[j]
+      if (t.liked === true || queued[t.id] || _scanning[t.id]) continue
+      var e = playlistUris[t.id]
+      // Up to date, or failed so recently that asking again would just hammer the API.
+      if (e && e.snapshot === t.snapshotId && (!e.failed || now - e.at < 60000)) continue
+      next.push(t)
+    }
+    _scanQueue = next
+    pumpScan()
+  }
+
+  function pumpScan() {
+    while (_scanActive < scanWorkers && _scanQueue.length > 0) {
+      var target = _scanQueue[0]
+      _scanQueue = _scanQueue.slice(1)
+      startScan(target)
+    }
+  }
+
+  function startScan(target) {
+    var epoch = _scanEpoch
+    _scanActive++
+    _scanning[target.id] = true
+    call(["playlist-uris", target.id, "--max", "3000"], function(result) {
+      if (epoch !== root._scanEpoch) return
+      root._scanActive--
+      delete root._scanning[target.id]
+      var entry = { snapshot: target.snapshotId, at: Date.now(), complete: false, failed: true, uris: ({}) }
+      if (result.ok && result.data) {
+        var map = {}
+        var list = result.data.uris || []
+        for (var i = 0; i < list.length; i++) map[list[i]] = true
+        entry = { snapshot: target.snapshotId, at: Date.now(), complete: result.data.complete === true, failed: false, uris: map }
+      } else if (root.absorbAuthError(result)) {
+        root._scanQueue = []
+        return
+      }
+      var copy = {}
+      for (var k in root.playlistUris) copy[k] = root.playlistUris[k]
+      copy[target.id] = entry
+      root.playlistUris = copy
+      root.pumpScan()
+    })
   }
 
   function closePicker() { pickerItem = null }
@@ -742,6 +817,9 @@ Item {
     var item = pickerItem
     if (!item || !target) return
     var name = target.name || "playlist"
+    var state = membershipFor(target)
+    if (state === "has") { flash("Already in " + name, true); return }
+    if (state === "checking") { flash("Still checking " + name + "…", true); return }
     if (target.liked === true) {
       closePicker()
       action(["library-save", item.uri], function() {
@@ -928,6 +1006,7 @@ Item {
       root.playlists = items
       root.playlistsLoadedAt = Date.now()
       root.loadPlaylistCovers()
+      if (root.pickerOpen) root.scanPlaylists()
     })
   }
 

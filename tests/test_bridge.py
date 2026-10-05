@@ -845,5 +845,45 @@ class QueueCommandTests(TempHome):
                 bridge.build_parser().parse_args(["recent"])
 
 
+class PlaylistUrisTests(TempHome):
+    """playlist-uris feeds the "already in this playlist" check."""
+
+    def run_cmd(self, argv, entries, total):
+        args = bridge.build_parser().parse_args(argv)
+        buf = io.StringIO()
+        with mock.patch.object(bridge, "paged", return_value=(entries, total)) as paged, \
+             mock.patch.object(sys, "stdout", buf):
+            args.fn(args)
+        return json.loads(buf.getvalue())["data"], paged
+
+    def test_collects_uris_from_item_or_track_and_skips_removed_entries(self):
+        entries = [{"item": {"uri": "spotify:track:a"}}, {"track": {"uri": "spotify:track:b"}},
+                   {"item": None}, {"item": {"uri": ""}}, {}, {"item": {"uri": "spotify:episode:c"}}]
+        data, _ = self.run_cmd(["playlist-uris", "37i9dQZF1DXcBWIGoYBM5M"], entries, 6)
+        self.assertEqual(data["uris"], ["spotify:track:a", "spotify:track:b", "spotify:episode:c"])
+        self.assertEqual(data["total"], 6)
+        self.assertTrue(data["complete"])
+
+    def test_complete_is_false_when_the_playlist_is_longer_than_what_was_read(self):
+        entries = [{"item": {"uri": "spotify:track:%d" % n}} for n in range(5)]
+        data, paged = self.run_cmd(["playlist-uris", "abc123", "--max", "5"], entries, 40)
+        self.assertFalse(data["complete"])
+        self.assertEqual(data["total"], 40)
+        self.assertEqual(paged.call_args.args[2], 5)
+
+    def test_asks_for_the_uris_only_and_validates_the_id(self):
+        _, paged = self.run_cmd(["playlist-uris", "abc123"], [], 0)
+        path, params = paged.call_args.args[:2]
+        self.assertEqual(path, "/playlists/abc123/items")
+        self.assertIn("item(uri)", params["fields"])
+        with self.assertRaises(bridge.ApiError):
+            self.run_cmd(["playlist-uris", "../me"], [], 0)
+
+    def test_playlists_carry_their_snapshot_id(self):
+        raw = {"id": "p1", "uri": "spotify:playlist:p1", "name": "Mix", "owner": {"id": "me"},
+               "items": {"total": 3}, "images": [], "snapshot_id": "snap123"}
+        self.assertEqual(bridge.norm_playlist(raw)["snapshotId"], "snap123")
+
+
 if __name__ == "__main__":
     unittest.main()
