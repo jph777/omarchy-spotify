@@ -18,7 +18,9 @@ even play music with no Spotify window open at all.
 - **In the bar:** the current cover art (or the last thing you played) and a
   scrolling "Title · Artist". Left-click opens the panel, middle-click
   pauses, right-click skips, scrolling changes the volume.
-- **Now playing:** big cover, title, artist and album, a seek bar you can
+- **Now playing:** big cover, title, artist and album (a title or artist line
+  that is too long for the panel scrolls, pausing at the start so you can read
+  it), a seek bar you can
   drag, shuffle / previous / play / next / repeat, a volume slider, and a
   heart that saves the track to your library.
 - **Search:** type once and get tracks, artists, albums, playlists, podcasts,

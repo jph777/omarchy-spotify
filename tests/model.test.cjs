@@ -217,3 +217,16 @@ test("searchRows shows the queue as Up next when nothing is typed, and search re
   assert.equal(searching.length, 1)
   assert.equal(searching[0].text, "Searching…")
 })
+
+test("marquee only scrolls text that overflows, at a steady speed", () => {
+  assert.deepEqual(plain(Model.marquee(100, 200, 32, 40)), { scrolls: false, distance: 0, durationMs: 0 })
+  // Fits exactly, or within a pixel of it: no scrolling.
+  assert.equal(Model.marquee(200, 200, 32, 40).scrolls, false)
+  assert.equal(Model.marquee(200.8, 200, 32, 40).scrolls, false)
+  // Not laid out yet (no width): never scrolls.
+  assert.equal(Model.marquee(500, 0, 32, 40).scrolls, false)
+  // Overflowing: moves the text width plus the gap; 400 px at 40 px/s is 10 s.
+  assert.deepEqual(plain(Model.marquee(368, 200, 32, 40)), { scrolls: true, distance: 400, durationMs: 10000 })
+  // A barely-overflowing text still takes a readable time to go round.
+  assert.equal(Model.marquee(205, 200, 32, 400).durationMs, 3000)
+})

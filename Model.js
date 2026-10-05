@@ -109,6 +109,18 @@ function artSource(item) {
   return item.art || ""
 }
 
+// Marquee maths for text that is wider than its box. It scrolls the text left by
+// its own width plus a gap (a second copy then fills the box), at a steady speed.
+function marquee(textWidth, viewWidth, gap, pxPerSecond) {
+  var scrolls = viewWidth > 0 && textWidth > viewWidth + 1
+  var distance = scrolls ? textWidth + gap : 0
+  return {
+    scrolls: scrolls,
+    distance: distance,
+    durationMs: scrolls ? Math.max(3000, Math.round(distance / pxPerSecond * 1000)) : 0
+  }
+}
+
 // A cover that is on its way: the list has its URL but no file for it yet. `files`
 // maps cover URL -> file path ("" once a fetch has failed); a URL that is in it,
 // even with an empty path, is settled.

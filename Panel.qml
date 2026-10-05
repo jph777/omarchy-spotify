@@ -362,6 +362,77 @@ Panel {
 
   // Cover art with rounded corners and a glyph placeholder. Reads root for
   // colors so callers only ever set `source` and `placeholder`.
+  // Text that scrolls when it is too wide for its box and sits still when it fits.
+  // It rests a moment so the start can be read, then scrolls left at a steady speed
+  // and comes back around after a gap, only while the panel is open.
+  component MarqueeText: Item {
+    id: marquee
+    property string text: ""
+    property color color: root.foreground
+    property real pixelSize: Style.font.body
+    property bool bold: false
+    readonly property real gap: Style.space(32)
+    readonly property var spec: Model.marquee(measure.implicitWidth, width, gap, Style.space(42))
+    readonly property bool scrolling: spec.scrolls && root.opened
+
+    implicitHeight: measure.implicitHeight
+    clip: true
+
+    Text {
+      id: measure
+      visible: false
+      textFormat: Text.PlainText
+      text: marquee.text
+      font.family: root.fontFamily
+      font.pixelSize: marquee.pixelSize
+      font.bold: marquee.bold
+    }
+
+    Item {
+      id: strip
+      height: parent.height
+      width: measure.implicitWidth
+
+      Text {
+        textFormat: Text.PlainText
+        text: marquee.text
+        color: marquee.color
+        font.family: root.fontFamily
+        font.pixelSize: marquee.pixelSize
+        font.bold: marquee.bold
+      }
+      Text {
+        x: measure.implicitWidth + marquee.gap
+        visible: marquee.spec.scrolls
+        textFormat: Text.PlainText
+        text: marquee.text
+        color: marquee.color
+        font.family: root.fontFamily
+        font.pixelSize: marquee.pixelSize
+        font.bold: marquee.bold
+      }
+    }
+
+    SequentialAnimation {
+      id: run
+      running: marquee.scrolling
+      loops: Animation.Infinite
+      PauseAnimation { duration: 1500 }
+      NumberAnimation {
+        target: strip
+        property: "x"
+        from: 0
+        to: -marquee.spec.distance
+        duration: marquee.spec.durationMs
+        easing.type: Easing.Linear
+      }
+    }
+
+    // A new track, or text that now fits: back to the start, resting.
+    onTextChanged: { run.stop(); strip.x = 0; if (scrolling) run.start() }
+    onScrollingChanged: if (!scrolling) { run.stop(); strip.x = 0 }
+  }
+
   // A cover tile. A cover that was not cached comes in with a diagonal wipe: a
   // soft "/" edge crosses the tile once, over a fixed time, and behind it appears
   // the finished tile (glyph, or the cover once it has loaded). Time alone drives
@@ -878,18 +949,15 @@ Panel {
                   width: parent.width
                   height: heroTitle.implicitHeight
 
-                  Text {
+                  MarqueeText {
                     id: heroTitle
                     anchors.left: parent.left
                     anchors.right: addToPlaylistButton.left
                     anchors.rightMargin: Style.space(6)
-                    textFormat: Text.PlainText
                     text: Model.heroTitle(root.player)
                     color: root.playerActive ? root.foreground : root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.heading
-                    font.bold: true
-                    elide: Text.ElideRight
+                    pixelSize: Style.font.heading
+                    bold: true
                   }
 
                   PanelActionButton {
@@ -920,15 +988,12 @@ Panel {
                   }
                 }
 
-                Text {
+                MarqueeText {
                   width: parent.width
-                  textFormat: Text.PlainText
                   visible: text !== ""
                   text: root.playerActive ? Model.heroSubtitle(root.player) : (root.service && root.service.lastPlayed && root.service.lastPlayed.name ? "Last played: " + root.service.lastPlayed.name : "")
                   color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  elide: Text.ElideRight
+                  pixelSize: Style.font.bodySmall
                 }
 
                 Item { width: 1; height: Style.space(2) }
